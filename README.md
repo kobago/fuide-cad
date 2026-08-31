@@ -1,6 +1,6 @@
-# FUIDE — FUI Desktop Environment
+# FUIDE — FUI Develop Environment
 
-egui (0.36) で作る Sci-Fi / FUI (Futuristic UI) デザインのデスクトップツール群。`fuide` クレート (テーマ・窓シェル・部品) の上に、ファイルマネージャーと Homebrew フロントエンドが載っています。
+Sci-Fi / FUI (Futuristic UI) デザインのアプリを作るための開発環境。中核は egui (0.36) 向けの `fuide` クレート (テーマ・窓シェル・部品) で、その上に最初のアプリとしてファイルマネージャーと Homebrew フロントエンド (macOS デスクトップ) を載せています。今後はモバイルなどデスクトップ以外のアプリも同じ基盤で作る予定です。
 
 ```
 crates/fuide/        FUI 部品ライブラリ `fuide` (egui のみ依存)

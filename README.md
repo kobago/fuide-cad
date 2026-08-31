@@ -69,6 +69,10 @@ cargo run -p fuide-brew
 - キー: ↑↓ 選択、Enter ホームページ、Cmd+Backspace アンインストール、Cmd+R 再取得
 - 撮影フック: `FUIDE_DEV_DIALOG=uninstall|upgrade|error|success`、`FUIDE_DEV_RUN="doctor"` (起動時に brew コマンドを流す)、`FUIDE_DEV_SEARCH=ripgrep`
 
+## 再描画レートとウィンドウマネージャー
+
+シェルのアイドルアニメーション（枠のパルス・走査帯）は **20 fps** で再描画する（`fuide::shell::IDLE_FPS`、環境変数 `FUIDE_IDLE_FPS` で変更、`0` = 毎フレーム）。毎フレーム再描画すると macOS では Rectangle などのスナップ操作で 200〜500 ms 遅れる（[winit #3644](https://github.com/rust-windowing/winit/issues/3644)、[kobago/fuide#1](https://github.com/kobago/fuide/issues/1)）。ダイアログのフェードや brew 出力の流入など一時的なアニメーションは従来どおり即時に再描画する。`FUIDE_DEV_FRAMELOG=1` で 30 フレームごとの時刻を stderr に出せる。
+
 ## 配布 (.app / DMG、Apple Silicon)
 
 ```sh

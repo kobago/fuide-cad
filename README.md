@@ -71,6 +71,7 @@ cargo run -p fuide-brew
 - 読み取り系は `HOMEBREW_NO_AUTO_UPDATE=1` で呼ぶ (自動更新で数秒待たされないため)。全コマンドに `NONINTERACTIVE=1`、stdin は閉じるので sudo 待ちで固まらない
 - キー: ↑↓ 選択、Enter ホームページ、Cmd+Backspace アンインストール、Cmd+R 再取得、Cmd+, 設定
 - 撮影フック: `FUIDE_DEV_DIALOG=uninstall|upgrade|error|success`、`FUIDE_DEV_RUN="doctor"` (起動時に brew コマンドを流す)、`FUIDE_DEV_SEARCH=ripgrep`
+- `FUIDE_BREW_BIN=/path/to/brew` で呼び出す `brew` を差し替えられる (テストは `fixtures/fake-brew.sh` を使う。`FUIDE_FAKE_BREW_LOG` にコールを記録)
 
 ## 設定ウィンドウ (テーマ)
 
@@ -80,6 +81,29 @@ cargo run -p fuide-brew
 - 子 viewport は eframe 0.36 では撮影できない (immediate は `Screenshot` コマンドを捨てる。deferred は macOS でイベントループが約 1 秒止まったあと再描画が来なくなる)。撮影は `FUIDE_DEV_EMBED=1` で本体に埋め込んで行う (上の「開発用スクリーンショット」)
 - 保存先は macOS では `~/Library/Application Support/FUIDE/<app>.conf` (`file-manager.conf` / `brew.conf`)、他 OS では `$XDG_CONFIG_HOME/fuide/` か `~/.config/fuide/`。`FUIDE_CONFIG_DIR` で置き換え可。中身は `palette=amber` のような `key=value` 行で、知らないキーは無視、足りないキーは既定値
 - 自作アプリで使うには `fuide::Settings` と `fuide::SettingsWindow` (下の「クレートの使い方」参照)
+
+## テスト
+
+```sh
+cargo test                                   # 単体 + UI テスト (オフラインで完結、数秒)
+cargo test -- --ignored                      # 実機依存 (Finder のゴミ箱など)
+UPDATE_SNAPSHOTS=true cargo test -p fuide    # 見た目が意図的に変わったときにスナップショットを更新
+```
+
+| 層 | 場所 | 中身 |
+|---|---|---|
+| 単体 (fuide) | 各モジュールの `#[cfg(test)]` | `fmt` / `fontmetrics` / `settings` の純関数 |
+| UI (fuide) | `crates/fuide/tests/ui.rs` | [`egui_kittest`](https://docs.rs/egui_kittest) でシェル + パネル + 部品をヘッドレス描画。**アクセシビリティ木**でボタンやタブをラベルから探してクリック・状態確認、**wgpu スナップショット** (`tests/snapshots/*.png`、`kittest.toml` の閾値) で見た目の回帰を検出 |
+| 単体 (アプリ) | `apps/*/src/*.rs` | `fs.rs` / `brew.rs` の純関数 |
+| 状態機械 (アプリ) | `apps/*/src/app/tests.rs` | `Explorer::with_context(ctx, dir, settings)` / `BrewApp::with_context(ctx, settings)` で `CreationContext` 無しにアプリを作り、`Action` を適用して状態・ログ・ダイアログを検証。ファイルマネージャーは一時ディレクトリで実ファイル操作 (一覧・ソート・フィルター・履歴・リネーム・完全削除・読取拒否) まで通す。ローダーやファイル操作のスレッドは `ui()` と同じく `poll_*` を回して待つ |
+| 結合 (brew) | 同上 + `apps/brew/fixtures/` | `FUIDE_BREW_BIN` を `fixtures/fake-brew.sh` に向け、本物の worker スレッドとストリーミング実行 (`==>` 行のログ流入、成功/失敗カード、完了後の在庫再取得、検索結果への導入状態の反映) を Homebrew 無しで検証。`info-installed.json` が在庫のフィクスチャ |
+
+決めごと:
+- 実機依存 (Finder のゴミ箱、本物の brew、画面収録) は `#[ignore]` か偽物に差し替え、`cargo test` はオフラインで通す
+- **操作できる部品は必ず `Response::widget_info` でラベルを持つ** (`nav_tab` / `button` / `icon_button` / `toggle_chip` / テーブルの列見出し・行 / シェルの窓ボタンと歯車)。ラベルは**描画と同じ大文字**にする。アイコンだけのボタンは `Icon::label()` (`REFRESH` など)。これが UI テストと支援技術の共通の入口
+- 状態は egui の流儀で読む: `WidgetInfo::selected` は AccessKit の `toggled` に写るので、テストでは `node.accesskit_node().toggled() == Some(Toggled::True)`
+- シェルは常時アニメして毎フレーム再描画を要求するので、kittest では `run()` (静止待ち) ではなく `run_steps(n)` + `with_step_dt` で決定的に進める
+- ハーネスは生成時に最初のフレームを回すため、フォント登録 (`theme::install`) は最初のフレームで行い、そのフレームは何も描かない (`set_fonts` は次パスから有効)
 
 ## 再描画レートとウィンドウマネージャー
 

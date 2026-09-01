@@ -1,3 +1,7 @@
 /target
 /dist
 .DS_Store
+# egui_kittest snapshot failures (the .png baselines are committed)
+*.diff.png
+*.new.png
+*.old.png

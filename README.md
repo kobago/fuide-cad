@@ -38,6 +38,7 @@ cargo test -- --ignored trash            # 実際にゴミ箱へ移動する統�
 | ゴミ箱へ移動 / 完全削除 | Cmd+Backspace / Cmd+Option+Backspace (確認ダイアログ) |
 | フィルターにフォーカス / クリア | Cmd+F / Esc |
 | パレット切替 CYAN / AMBER / GREEN | Cmd+1 / 2 / 3 |
+| 設定ウィンドウ | Cmd+, またはタイトルバーの歯車 |
 | ダブルクリック | ディレクトリは移動、ファイル・.app は OS で開く |
 
 日本語ファイル名は起動時に `/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc` をフォールバックとして読み込んで表示する (無ければスキップ)。egui はフォールバック書体を行高の差の分だけずらして置くため (ヒラギノは lineGap 0.5em で約 0.19em 浮く)、`fuide::fontmetrics` が hhea / OS/2 を読んで主書体ごとに `y_offset_factor` を計算し、Share Tech Mono 用と Orbitron 用の 2 通りで登録している。
@@ -51,6 +52,8 @@ FUIDE_SCREENSHOT=/path/shot.tga cargo run -p fuide-file-manager   # 45 フレー
 FUIDE_DEV_DIALOG=rename|trash|delete|error ...                   # 先頭項目でダイアログを開いた状態で撮影
 FUIDE_DEV_LOG="long error text" ...                        # 起動時にログへ赤い行を 1 本入れる (折り返し確認用)
 FUIDE_DEV_DIALOG_CLOSE=45 FUIDE_SCREENSHOT_FRAME=50 ...      # 45F でダイアログを閉じ、50F で撮影 (フェードアウト確認用)
+FUIDE_DEV_SETTINGS=1 FUIDE_DEV_EMBED=1 FUIDE_CONFIG_DIR=/tmp/cfg ...  # 設定ウィンドウを開いた状態で撮影 (本体に埋め込む。設定ファイルは /tmp/cfg に隔離)
+FUIDE_DEV_TRACE=1 ...                                      # eframe / egui の log 出力 (再描画スケジュール、viewport の生成/破棄) を stderr へ
 sips -s format png /path/shot.tga --out /path/shot.png
 ```
 
@@ -66,8 +69,17 @@ cargo run -p fuide-brew
 - 下: brew の標準出力・標準エラーをストリーミング表示 (`==>` = 緑、`Warning` = 注意色、`Error` = 危険色)
 - 変更系 (update / upgrade / install / uninstall) は確認ダイアログ → 別スレッドで実行、完了後に在庫を再取得。成功は SUCCESS カード、失敗は ERROR カード。同時実行は 1 つ
 - 読み取り系は `HOMEBREW_NO_AUTO_UPDATE=1` で呼ぶ (自動更新で数秒待たされないため)。全コマンドに `NONINTERACTIVE=1`、stdin は閉じるので sudo 待ちで固まらない
-- キー: ↑↓ 選択、Enter ホームページ、Cmd+Backspace アンインストール、Cmd+R 再取得
+- キー: ↑↓ 選択、Enter ホームページ、Cmd+Backspace アンインストール、Cmd+R 再取得、Cmd+, 設定
 - 撮影フック: `FUIDE_DEV_DIALOG=uninstall|upgrade|error|success`、`FUIDE_DEV_RUN="doctor"` (起動時に brew コマンドを流す)、`FUIDE_DEV_SEARCH=ripgrep`
+
+## 設定ウィンドウ (テーマ)
+
+両アプリとも `Cmd+,` かタイトルバーの歯車で設定ウィンドウが開く。パレット (CYAN / AMBER / GREEN)、角 (SQUARE / CHAMFER)、密度 (NORMAL / COMPACT) を選ぶと即座に本体へ反映され、ファイルに保存される。閉じるのは × / Esc / Cmd+W。
+
+- 設定ウィンドウは egui の **子 viewport** (別のネイティブウィンドウ、`show_viewport_deferred`) で、本体と同じ `fuide::Shell` を `tool_window()` (閉じるボタンのみ・リサイズなし・アイドルアニメ無し = 入力があったときだけ再描画) で描いている。フォントや Visuals は `egui::Context` 全体で共有なので、子ウィンドウで変えた瞬間に本体も変わる
+- 子 viewport は eframe 0.36 では撮影できない (immediate は `Screenshot` コマンドを捨てる。deferred は macOS でイベントループが約 1 秒止まったあと再描画が来なくなる)。撮影は `FUIDE_DEV_EMBED=1` で本体に埋め込んで行う (上の「開発用スクリーンショット」)
+- 保存先は macOS では `~/Library/Application Support/FUIDE/<app>.conf` (`file-manager.conf` / `brew.conf`)、他 OS では `$XDG_CONFIG_HOME/fuide/` か `~/.config/fuide/`。`FUIDE_CONFIG_DIR` で置き換え可。中身は `palette=amber` のような `key=value` 行で、知らないキーは無視、足りないキーは既定値
+- 自作アプリで使うには `fuide::Settings` と `fuide::SettingsWindow` (下の「クレートの使い方」参照)
 
 ## 再描画レートとウィンドウマネージャー
 
@@ -132,6 +144,20 @@ fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
 ```
 
 `NativeOptions.viewport` は `with_decorations(false).with_transparent(true)`、`App::clear_color` は `[0.0; 4]` にする。
+
+設定ウィンドウを付けるなら、起動時に `Settings::load("my-tool")` で読んで `install` に渡し、毎フレームの最後に `SettingsWindow::show` を呼ぶ:
+
+```rust
+let settings = fuide::Settings::load("my-tool").unwrap_or_else(|| fuide::Settings::new(fuide::PaletteKind::Cyan));
+fuide::theme::install(&cc.egui_ctx, settings.palette.palette(), vec![]);
+settings.apply(&cc.egui_ctx);
+..
+let out = fuide::Shell::new("My Tool").settings_button(true).show_full(ui, |ui| { .. });
+if out.settings_clicked { self.settings_win.open(); }
+if self.settings_win.show(ui.ctx(), &mut self.settings, "My Tool") {
+    self.settings.save("my-tool").ok();   // 変更があったフレームだけ true
+}
+```
 
 文字サイズは `fuide::TypeScale` に集約 (既定 `NORMAL`: 本文 13.5px / ラベル・見出し 13px / 脚注 12px / 行高 24px、Finder の 13px 相当)。密度を上げたいときは `theme::set_type_scale(&ctx, TypeScale::COMPACT)` か `.scaled(f)`。egui 標準の Cmd +/- でも全体をズームできる。
 

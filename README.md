@@ -100,6 +100,22 @@ fuide-brew
 - `open` は起動先の cwd を `/` にするため、ラッパー側で `cd "$dir" && pwd -P` で絶対化してから渡している
 - アプリは `/Applications` か `~/Applications` に入れておく（DMG からドラッグ）。`open` は LaunchServices のデータベースからバンドル名で探すので、パスは不要
 
+## 他のプロジェクトから `fuide` を使う (git 依存)
+
+`fuide` はまだ crates.io には公開していないので、GitHub の URL を `Cargo.toml` に書いて取り込む。ワークスペース内の `crates/fuide` は Cargo がパッケージ名で見つけるので、パスの指定は不要。
+
+```toml
+[dependencies]
+egui = "0.36.1"
+eframe = { version = "0.36.1", default-features = false, features = ["default_fonts", "wgpu"] }
+fuide = { git = "https://github.com/kobago/fuide" }
+```
+
+- 再現性のため、コミットかタグで固定するのを推奨: `{ git = "...", rev = "65ca5ba" }` / `{ git = "...", tag = "v0.1.0" }`。`branch = "main"` で追従もできる。何も書かなくても `Cargo.lock` にコミットが記録され、`cargo update` で進む
+- リポジトリが private の間は認証が要る。SSH が簡単: `fuide = { git = "ssh://git@github.com/kobago/fuide" }`。HTTPS を使うなら `~/.cargo/config.toml` に `[net] git-fetch-with-cli = true` を入れてシステムの git (credential helper) に任せる
+- `egui` / `eframe` は `fuide` と同じ 0.36 系に揃える (ずれると型が一致せずコンパイルできない)
+- crates.io に公開したら `fuide = "0.1"` に差し替えるだけで移行できる
+
 ## `fuide` クレートの使い方 (最小)
 
 ```rust

@@ -28,7 +28,7 @@ cargo test -- --ignored trash            # 実際にゴミ箱へ移動する統�
 - 右: 選択項目のインスペクター (種類 / サイズ / 日時 / パーミッション / パス)、OPEN / FINDER / COPY / RENAME / DELETE
 - エラー (削除失敗 / ディレクトリ読取拒否 / OS で開けない) は大きな `ERROR` カード (`fuide::dialog::alert`) で通知。カードには操作名だけ、詳細はイベントログ。Enter / Space / Esc / ACKNOWLEDGE で閉じる。複数のエラーは順番に表示
 - リネームと削除は FUI 風のモーダルダイアログ (`fuide::Dialog`、開閉とも 0.15 秒のフェード)。削除は既定でゴミ箱へ移動 (`NSFileManager.trashItem`、Finder から復元可)、ダイアログ内の PERMANENT で完全削除に切替 (枠が危険色になる)
-- 下: イベントログ (長い行は折り返し、ドラッグ選択して Cmd+C でコピー可、溢れたらスクロール)、ステータスバー (`T+HH:MM:SS.s` 経過時間、24h 超で `T+1d …`、件数、FPS、FS リンク状態)
+- 下: イベントログ (長い行は折り返し、ドラッグ選択して Cmd+C でコピー可、溢れたらスクロール。**パネル上の帯をドラッグして高さを変えられ、設定ファイルに保存される**)、ステータスバー (`T+HH:MM:SS.s` 経過時間、24h 超で `T+1d …`、件数、FPS、FS リンク状態)
 
 | 操作 | キー |
 |---|---|
@@ -67,7 +67,7 @@ cargo run -p fuide-brew
 - 左: ビュー (INSTALLED / OUTDATED / CASKS / SEARCH、Cmd+1..4)、SYSTEM パネル (最新率ゲージ、formulae / casks / outdated / pinned、Cellar・Caskroom 容量、最終 `brew update`)
 - 中央: リロード、UPDATE、UPGRADE ALL (n)、フィルター (Cmd+F)、一覧 (NAME / VERSION / LATEST / KIND / STATUS、列ソート)。SEARCH ビューでは検索欄 (formulae と casks を検索し、上位 25 件ずつ `brew info` で詳細取得)
 - 右: パッケージ詳細 (説明、状態、版、tap、ライセンス、導入日、依存、ホームページ、caveats) と HOMEPAGE / COPY / PIN / UPGRADE / UNINSTALL / INSTALL
-- 下: brew の標準出力・標準エラーをストリーミング表示 (`==>` = 緑、`Warning` = 注意色、`Error` = 危険色)
+- 下: brew の標準出力・標準エラーをストリーミング表示 (`==>` = 緑、`Warning` = 注意色、`Error` = 危険色)。パネル上の帯をドラッグして高さを変えられる (保存される)
 - 変更系 (update / upgrade / install / uninstall) は確認ダイアログ → 別スレッドで実行、完了後に在庫を再取得。成功は SUCCESS カード、失敗は ERROR カード。同時実行は 1 つ
 - 読み取り系は `HOMEBREW_NO_AUTO_UPDATE=1` で呼ぶ (自動更新で数秒待たされないため)。全コマンドに `NONINTERACTIVE=1`、stdin は閉じるので sudo 待ちで固まらない
 - キー: ↑↓ 選択、Enter ホームページ、Cmd+Backspace アンインストール、Cmd+R 再取得、Cmd+, 設定、Cmd+W 終了 (実行中の brew コマンドは止めない: 子プロセスはそのまま完走する)
@@ -80,7 +80,7 @@ cargo run -p fuide-brew
 
 - 設定ウィンドウは egui の **子 viewport** (別のネイティブウィンドウ、`show_viewport_deferred`) で、本体と同じ `fuide::Shell` を `tool_window()` (閉じるボタンのみ・リサイズなし・アイドルアニメ無し = 入力があったときだけ再描画) で描いている。フォントや Visuals は `egui::Context` 全体で共有なので、子ウィンドウで変えた瞬間に本体も変わる
 - 子 viewport は eframe 0.36 では撮影できない (immediate は `Screenshot` コマンドを捨てる。deferred は macOS でイベントループが約 1 秒止まったあと再描画が来なくなる)。撮影は `FUIDE_DEV_EMBED=1` で本体に埋め込んで行う (上の「開発用スクリーンショット」)
-- 保存先は macOS では `~/Library/Application Support/FUIDE/<app>.conf` (`file-manager.conf` / `brew.conf`)、他 OS では `$XDG_CONFIG_HOME/fuide/` か `~/.config/fuide/`。`FUIDE_CONFIG_DIR` で置き換え可。中身は `palette=amber` のような `key=value` 行で、知らないキーは無視、足りないキーは既定値
+- 保存先は macOS では `~/Library/Application Support/FUIDE/<app>.conf` (`file-manager.conf` / `brew.conf`)、他 OS では `$XDG_CONFIG_HOME/fuide/` か `~/.config/fuide/`。`FUIDE_CONFIG_DIR` で置き換え可。中身は `palette=amber` のような `key=value` 行 (`palette` / `chamfer` / `compact`、ログパネルをドラッグすると `log_height`) で、知らないキーは無視、足りないキーは既定値
 - 自作アプリで使うには `fuide::Settings` と `fuide::SettingsWindow` (下の「クレートの使い方」参照)
 
 ## テスト

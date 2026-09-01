@@ -39,6 +39,7 @@ cargo test -- --ignored trash            # 実際にゴミ箱へ移動する統�
 | フィルターにフォーカス / クリア | Cmd+F / Esc |
 | パレット切替 CYAN / AMBER / GREEN | Cmd+1 / 2 / 3 |
 | 設定ウィンドウ | Cmd+, またはタイトルバーの歯車 |
+| 終了 | Cmd+W (ウィンドウを閉じる = アプリ終了。ダイアログ中や入力欄フォーカス中でも効く) |
 | ダブルクリック | ディレクトリは移動、ファイル・.app は OS で開く |
 
 日本語ファイル名は起動時に `/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc` をフォールバックとして読み込んで表示する (無ければスキップ)。egui はフォールバック書体を行高の差の分だけずらして置くため (ヒラギノは lineGap 0.5em で約 0.19em 浮く)、`fuide::fontmetrics` が hhea / OS/2 を読んで主書体ごとに `y_offset_factor` を計算し、Share Tech Mono 用と Orbitron 用の 2 通りで登録している。
@@ -69,7 +70,7 @@ cargo run -p fuide-brew
 - 下: brew の標準出力・標準エラーをストリーミング表示 (`==>` = 緑、`Warning` = 注意色、`Error` = 危険色)
 - 変更系 (update / upgrade / install / uninstall) は確認ダイアログ → 別スレッドで実行、完了後に在庫を再取得。成功は SUCCESS カード、失敗は ERROR カード。同時実行は 1 つ
 - 読み取り系は `HOMEBREW_NO_AUTO_UPDATE=1` で呼ぶ (自動更新で数秒待たされないため)。全コマンドに `NONINTERACTIVE=1`、stdin は閉じるので sudo 待ちで固まらない
-- キー: ↑↓ 選択、Enter ホームページ、Cmd+Backspace アンインストール、Cmd+R 再取得、Cmd+, 設定
+- キー: ↑↓ 選択、Enter ホームページ、Cmd+Backspace アンインストール、Cmd+R 再取得、Cmd+, 設定、Cmd+W 終了 (実行中の brew コマンドは止めない: 子プロセスはそのまま完走する)
 - 撮影フック: `FUIDE_DEV_DIALOG=uninstall|upgrade|error|success`、`FUIDE_DEV_RUN="doctor"` (起動時に brew コマンドを流す)、`FUIDE_DEV_SEARCH=ripgrep`
 - `FUIDE_BREW_BIN=/path/to/brew` で呼び出す `brew` を差し替えられる (テストは `fixtures/fake-brew.sh` を使う。`FUIDE_FAKE_BREW_LOG` にコールを記録)
 
@@ -171,7 +172,7 @@ fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
 }
 ```
 
-`NativeOptions.viewport` は `with_decorations(false).with_transparent(true)`、`App::clear_color` は `[0.0; 4]` にする。
+`NativeOptions.viewport` は `with_decorations(false).with_transparent(true)`、`App::clear_color` は `[0.0; 4]` にする。`Shell` は Cmd+W で自分のウィンドウに `ViewportCommand::Close` を送る (本体なら終了、`tool_window()` は自前で閉じる)。
 
 設定ウィンドウを付けるなら、起動時に `Settings::load("my-tool")` で読んで `install` に渡し、毎フレームの最後に `SettingsWindow::show` を呼ぶ:
 

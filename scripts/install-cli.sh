@@ -15,7 +15,15 @@ mkdir -p "$dest"
 cat > "$dest/ffm" <<'SH'
 #!/bin/sh
 # ffm [DIR] — open FUIDE File Manager at DIR (default: current directory)
+# ffm --mcp  — stdio MCP bridge to the running app (for `claude mcp add ffm -- ffm --mcp`)
 app="FUIDE File Manager"
+if [ "${1:-}" = "--mcp" ]; then
+  for d in /Applications "$HOME/Applications"; do
+    bin="$d/$app.app/Contents/MacOS/fuide-file-manager"
+    [ -x "$bin" ] && exec "$bin" --mcp
+  done
+  echo "ffm: $app.app not found in /Applications or ~/Applications" >&2; exit 1
+fi
 dir="${1:-.}"
 [ -d "$dir" ] || { echo "ffm: not a directory: $dir" >&2; exit 1; }
 abs=$(cd "$dir" && pwd -P)
@@ -24,8 +32,17 @@ SH
 
 cat > "$dest/fuide-brew" <<'SH'
 #!/bin/sh
-# fuide-brew — open FUIDE Brew
-exec open -a "FUIDE Brew"
+# fuide-brew       — open FUIDE Brew
+# fuide-brew --mcp — stdio MCP bridge to the running app (for `claude mcp add fuide-brew -- fuide-brew --mcp`)
+app="FUIDE Brew"
+if [ "${1:-}" = "--mcp" ]; then
+  for d in /Applications "$HOME/Applications"; do
+    bin="$d/$app.app/Contents/MacOS/fuide-brew"
+    [ -x "$bin" ] && exec "$bin" --mcp
+  done
+  echo "fuide-brew: $app.app not found in /Applications or ~/Applications" >&2; exit 1
+fi
+exec open -a "$app"
 SH
 
 chmod +x "$dest/ffm" "$dest/fuide-brew"

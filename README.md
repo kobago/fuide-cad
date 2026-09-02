@@ -76,12 +76,48 @@ cargo run -p fuide-brew
 
 ## 設定ウィンドウ (テーマ)
 
-両アプリとも `Cmd+,` かタイトルバーの歯車で設定ウィンドウが開く。パレット (CYAN / AMBER / GREEN)、角 (SQUARE / CHAMFER)、密度 (NORMAL / COMPACT) を選ぶと即座に本体へ反映され、ファイルに保存される。閉じるのは × / Esc / Cmd+W。
+両アプリとも `Cmd+,` かタイトルバーの歯車で設定ウィンドウが開く。パレット (CYAN / AMBER / GREEN)、角 (SQUARE / CHAMFER)、密度 (NORMAL / COMPACT)、AGENT (MCP サーバーの OFF / ON、確認ダイアログを HUMAN / AGENT のどちらが押すか。下の「AI エージェントから操作する」) を選ぶと即座に本体へ反映され、ファイルに保存される。閉じるのは × / Esc / Cmd+W。
 
 - 設定ウィンドウは egui の **子 viewport** (別のネイティブウィンドウ、`show_viewport_deferred`) で、本体と同じ `fuide::Shell` を `tool_window()` (閉じるボタンのみ・リサイズなし・アイドルアニメ無し = 入力があったときだけ再描画) で描いている。フォントや Visuals は `egui::Context` 全体で共有なので、子ウィンドウで変えた瞬間に本体も変わる
 - 子 viewport は eframe 0.36 では撮影できない (immediate は `Screenshot` コマンドを捨てる。deferred は macOS でイベントループが約 1 秒止まったあと再描画が来なくなる)。撮影は `FUIDE_DEV_EMBED=1` で本体に埋め込んで行う (上の「開発用スクリーンショット」)
-- 保存先は macOS では `~/Library/Application Support/FUIDE/<app>.conf` (`file-manager.conf` / `brew.conf`)、他 OS では `$XDG_CONFIG_HOME/fuide/` か `~/.config/fuide/`。`FUIDE_CONFIG_DIR` で置き換え可。中身は `palette=amber` のような `key=value` 行 (`palette` / `chamfer` / `compact`、ログパネルをドラッグすると `log_height`) で、知らないキーは無視、足りないキーは既定値
+- 保存先は macOS では `~/Library/Application Support/FUIDE/<app>.conf` (`file-manager.conf` / `brew.conf`)、他 OS では `$XDG_CONFIG_HOME/fuide/` か `~/.config/fuide/`。`FUIDE_CONFIG_DIR` で置き換え可。中身は `palette=amber` のような `key=value` 行 (`palette` / `chamfer` / `compact` / `agent` / `agent_confirm`、ログパネルをドラッグすると `log_height`) で、知らないキーは無視、足りないキーは既定値
 - 自作アプリで使うには `fuide::Settings` と `fuide::SettingsWindow` (下の「クレートの使い方」参照)
+
+## AI エージェントから操作する (MCP)
+
+両アプリは **MCP サーバー** を内蔵している。設定ウィンドウ (`Cmd+,`) の AGENT パネルで `ON` にすると Unix ソケットで待ち受け、Claude Code などの MCP クライアントが画面を読み・クリックし・文字を打てる。人が見ている前で AI が FUI を操作するための機能なので、操作は画面に見える形で行われる: エージェント用の照準カーソルが目標までなめらかに移動し、押した部品が光り、直前の操作 (`CLICK ▸ OUTDATED`) がカーソル脇に出る。ステータスバーには `AGENT` ランプが点く (操作中は点滅)。
+
+```sh
+# Claude Code に登録 (ラッパーを入れていれば `ffm --mcp` / `fuide-brew --mcp` でも良い)
+claude mcp add fuide-brew -- "/Applications/FUIDE Brew.app/Contents/MacOS/fuide-brew" --mcp
+claude mcp add ffm        -- "/Applications/FUIDE File Manager.app/Contents/MacOS/fuide-file-manager" --mcp
+# 開発中は cargo のバイナリでも同じ
+claude mcp add fuide-brew -- target/debug/fuide-brew --mcp
+```
+
+| ツール | 内容 |
+|---|---|
+| `observe` | アプリの状態要約 (表示中のビュー・選択・実行中のコマンド・ダイアログ・ログ末尾) と、画面上の操作できる部品の一覧 `[role] LABEL (state) @x,y`。最初に呼び、各操作のあとも返ってくる |
+| `click {label, nth?}` | ラベルの部品へカーソルを動かしてクリック。ラベルは `observe` に出る文字列そのまま (大文字)。完全一致 → 大文字小文字無視 → 部分一致の順で探す |
+| `type {text, label?, submit?}` | 入力欄に 1 文字ずつ打つ。`label` を付けるとその欄にフォーカスしてから。`submit` で最後に Enter |
+| `key {key, repeat?}` | `enter` / `escape` / `down` / `cmd+3` / `cmd+f` / `cmd+backspace` など |
+| `wait {ms}` | brew の実行やディレクトリ読込を待ってから観測を返す |
+| `screenshot {scale?, path?}` | 窓を PNG で返す (画面収録権限は不要。`FUIDE_SCREENSHOT` と同じ自己撮影)。`path` を付けると保存もする |
+
+仕組みと決めごと:
+- **クリックの注入**: egui の `Event::AccessKitActionRequest(Click)` を対象ウィジェットの id に向けて入れる。egui はこれを本物のクリックとして扱う (`Response::clicked()` が真になる) ので、座標を当てる必要がなく、部品が動いても壊れない。キーと文字は `Event::Key` / `Event::Text` で、`Cmd` などの修飾キーはそのフレームの `InputState::modifiers` に載せる
+- **部品の一覧**: kit の部品は `Response::widget_info` の代わりに `fuide::agent::describe` を呼び、アクセシビリティ木への登録と同時にエージェント用の一覧にも載る (ラベル・種類・状態・矩形)。`egui::TextEdit` のように自前で木に載る部品は `fuide::agent::note` で一覧だけに足す。アプリ側は `agent_state()` で部品だけでは分からない状態を文章にして渡す
+- **モーダル中は、ダイアログの部品しか操作できない** (前景レイヤーに部品があればそれだけを列挙する)。AccessKit 経由のクリックはモーダルの背後にも届いてしまうため
+- **確認ダイアログの人間留保**: 設定の CONFIRM DIALOGS が `HUMAN` (既定) の間、brew の `UPGRADE` / `UNINSTALL` / `INSTALL`、ファイルマネージャーの `MOVE TO TRASH` / `DELETE PERMANENTLY` のボタンと Enter はエージェントに拒否され、観測に `(human only)` と出る。`CANCEL` は押せる。`AGENT` にすると自分で確定できる。リネームは可逆なので留保しない
+- **通信**: アプリが `~/Library/Application Support/FUIDE/<app>.sock` (パスが長すぎるときは `$TMPDIR/fuide-<app>.sock`) で MCP (JSON-RPC 2.0、改行区切り) を話す。`<app> --mcp` は同じバイナリの stdio ブリッジで、`initialize` / `tools/list` は自分で答え、`tools/call` だけをソケットへ転送する。だから **Claude Code はアプリより先に起動していてよい**: 最初の呼び出しでアプリが無ければ `open -a` で起動して 12 秒待ち、AGENT が OFF なら「設定で ON にして」というエラーを返す
+- 設定ウィンドウ (子 viewport) 自体はエージェントから操作できない (人間の操作面)。`FUIDE_DEV_EMBED=1` で本体に埋め込んだときは操作できる
+- 依存は増やしていない: JSON は `serde_json`、PNG は macOS の `sips` で圧縮 (無ければ非圧縮 PNG を自前で書く)、base64 も自前
+
+```sh
+# 手で試す (nc は改行区切りの JSON-RPC をそのまま流せる)
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"observe","arguments":{}}}' \
+  | nc -U ~/Library/Application\ Support/FUIDE/brew.sock
+```
 
 ## テスト
 
@@ -97,7 +133,8 @@ UPDATE_SNAPSHOTS=true cargo test -p fuide    # 見た目が意図的に変わっ
 | UI (fuide) | `crates/fuide/tests/ui.rs` | [`egui_kittest`](https://docs.rs/egui_kittest) でシェル + パネル + 部品をヘッドレス描画。**アクセシビリティ木**でボタンやタブをラベルから探してクリック・状態確認、**wgpu スナップショット** (`tests/snapshots/*.png`、`kittest.toml` の閾値) で見た目の回帰を検出 |
 | 単体 (アプリ) | `apps/*/src/*.rs` | `fs.rs` / `brew.rs` の純関数 |
 | 状態機械 (アプリ) | `apps/*/src/app/tests.rs` | `Explorer::with_context(ctx, dir, settings)` / `BrewApp::with_context(ctx, settings)` で `CreationContext` 無しにアプリを作り、`Action` を適用して状態・ログ・ダイアログを検証。ファイルマネージャーは一時ディレクトリで実ファイル操作 (一覧・ソート・フィルター・履歴・リネーム・完全削除・読取拒否) まで通す。ローダーやファイル操作のスレッドは `ui()` と同じく `poll_*` を回して待つ |
-| E2E (アプリ) | `apps/*/src/app/e2e.rs` | `egui_kittest` の `Harness::new_eframe` で本物の `Explorer` / `BrewApp` を起動し、アクセシビリティ木からラベルでクリック・キー入力・文字入力して状態を検証。ファイルマネージャー: 行クリック → Enter で移動 / Backspace / Cmd+[ ] / 矢印、Cmd+F → 入力 → Esc、歯車 → パレット・角の変更が保存される。brew (偽 brew): ビュー切替 (タブ / Cmd+数字)、UPGRADE ALL → 確認 → 出力ストリーム → SUCCESS カード → ACKNOWLEDGE、検索ビューで Cmd+F → 入力 → Enter、Cmd+, → パレット保存。設定ウィンドウは kittest では埋め込み `egui::Window` になる |
+| エージェント (fuide) | `crates/fuide/tests/agent.rs` | kittest 上で `Agent::submit` に `observe` / `click` / `type` / `key` / `screenshot` を流し、注入したクリックが kit の部品に届くこと、無効・人間留保・不明なラベルが拒否されること、PNG が返ることを検証 (ソケット無し) |
+| E2E (アプリ) | `apps/*/src/app/e2e.rs` | `egui_kittest` の `Harness::new_eframe` で本物の `Explorer` / `BrewApp` を起動し、アクセシビリティ木からラベルでクリック・キー入力・文字入力して状態を検証。brew はエージェント経由 (ビュー切替・行選択・Cmd+1・フィルター入力、確認ダイアログの人間留保と `agent_confirm` での確定) も通す。ファイルマネージャー: 行クリック → Enter で移動 / Backspace / Cmd+[ ] / 矢印、Cmd+F → 入力 → Esc、歯車 → パレット・角の変更が保存される。brew (偽 brew): ビュー切替 (タブ / Cmd+数字)、UPGRADE ALL → 確認 → 出力ストリーム → SUCCESS カード → ACKNOWLEDGE、検索ビューで Cmd+F → 入力 → Enter、Cmd+, → パレット保存。設定ウィンドウは kittest では埋め込み `egui::Window` になる |
 | 結合 (brew) | 同上 + `apps/brew/fixtures/` | `FUIDE_BREW_BIN` を `fixtures/fake-brew.sh` に向け、本物の worker スレッドとストリーミング実行 (`==>` 行のログ流入、成功/失敗カード、完了後の在庫再取得、検索結果への導入状態の反映) を Homebrew 無しで検証。`info-installed.json` が在庫のフィクスチャ |
 
 決めごと:
@@ -137,6 +174,7 @@ ffm ~/Downloads                     # 指定ディレクトリを開く (相対�
 fuide-brew
 ```
 
+- `ffm --mcp` / `fuide-brew --mcp` はバンドル内のバイナリを `--mcp` で直接実行する (MCP の stdio ブリッジ。上の「AI エージェントから操作する」)
 - `ffm` は `open -na "FUIDE File Manager" --args <絶対パス>` を呼ぶだけ。LaunchServices 経由なので Dock に出て、ターミナルを閉じても残る。`-n` で毎回新しいウィンドウ（プロセス）が開く
 - `open` は起動先の cwd を `/` にするため、ラッパー側で `cd "$dir" && pwd -P` で絶対化してから渡している
 - アプリは `/Applications` か `~/Applications` に入れておく（DMG からドラッグ）。`open` は LaunchServices のデータベースからバンドル名で探すので、パスは不要

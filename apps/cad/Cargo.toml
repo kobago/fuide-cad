@@ -1,0 +1,49 @@
+[package]
+name = "fuide-cad"
+description = "Parametric 3D CAD with a Sci-Fi FUI look, built on egui and the truck kernel"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+name = "fuide_cad"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fuide-cad"
+path = "src/main.rs"
+
+[dependencies]
+egui = { workspace = true }
+eframe = { workspace = true }
+fuide = { workspace = true }
+fuide-3d = { path = "../../crates/fuide-3d" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# macOS open panel (Cmd+O); the in-app path dialog (Cmd+L) is what the agent uses
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL", "NSArray", "NSObject", "NSEnumerator"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-uniform-type-identifiers", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWindow", "NSResponder", "NSApplication"] }
+objc2-uniform-type-identifiers = { version = "0.3", default-features = false, features = ["std", "UTType"] }
+block2 = "0.6"
+# truck master (crates.io 0.6.0 still depends on wgpu 22; master is on wgpu 30 like this workspace).
+# Pinned to a commit; bump deliberately.
+truck-modeling = { git = "https://github.com/ricosjp/truck", rev = "efe39930a28dc413dae90185edf86e2fc63b5c6d" }
+truck-shapeops = { git = "https://github.com/ricosjp/truck", rev = "efe39930a28dc413dae90185edf86e2fc63b5c6d" }
+truck-meshalgo = { git = "https://github.com/ricosjp/truck", rev = "efe39930a28dc413dae90185edf86e2fc63b5c6d", default-features = false, features = ["analyzers", "filters", "tessellation"] }
+truck-polymesh = { git = "https://github.com/ricosjp/truck", rev = "efe39930a28dc413dae90185edf86e2fc63b5c6d" }
+# Pure-Rust port of Manifold (the mesh boolean kernel OpenSCAD adopted): robust booleans on
+# triangle meshes. Pinned to a commit (0.14.0); bump deliberately.
+manifold-rust = { git = "https://github.com/larsbrubaker/manifold-rust", rev = "fe50327620811182d7c557e2f40262dbd1b5b8a5", features = ["parallel"] }
+
+[dev-dependencies]
+egui_kittest = { version = "0.36.1", features = ["eframe", "wgpu", "snapshot"] }
+
+[package.metadata.bundle]
+name = "FUIDE CAD"
+identifier = "fuide.cad"
+short_description = "Parametric 3D CAD with a Sci-Fi FUI look"
+icon = ["assets/icons/cad.svg"]
+category = "public.app-category.graphics-design"
+copyright = "Copyright (c) 2026 Go Kobayashi"
+osx_minimum_system_version = "13.0"

@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."   # cargo-bundle resolves icon paths from the current di
 command -v cargo-bundle >/dev/null || { echo "cargo-bundle missing: cargo install cargo-bundle" >&2; exit 1; }
 TARGET=aarch64-apple-darwin
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
-APPS=("$@"); [ ${#APPS[@]} -eq 0 ] && APPS=(fuide-file-manager fuide-brew fuide-player fuide-activity-monitor)
+APPS=("$@"); [ ${#APPS[@]} -eq 0 ] && APPS=(fuide-file-manager fuide-brew fuide-player fuide-activity-monitor fuide-cad)
 mkdir -p dist
 
 for app in "${APPS[@]}"; do

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install terminal launchers `ffm [DIR]` (FUIDE File Manager), `fuide-brew`,
-# `fuide-player [FILE|URL]...` and `fuide-activity-monitor`, like `open`.
+# `fuide-player [FILE|URL]...`, `fuide-activity-monitor` and `fuide-cad [FILE]`, like `open`.
 #   ./scripts/install-cli.sh            # into /opt/homebrew/bin if writable, else ~/.local/bin
 #   ./scripts/install-cli.sh ~/bin      # explicit directory
 # The launchers use `open -na`, so the app starts detached via LaunchServices (Dock icon,
@@ -88,8 +88,27 @@ fi
 exec open -a "$app"
 SH
 
-chmod +x "$dest/ffm" "$dest/fuide-brew" "$dest/fuide-player" "$dest/fuide-activity-monitor"
-echo "installed: $dest/ffm  $dest/fuide-brew  $dest/fuide-player  $dest/fuide-activity-monitor"
+cat > "$dest/fuide-cad" <<'SH'
+#!/bin/sh
+# fuide-cad [FILE] — open FUIDE CAD (optionally with a .cad.json document)
+# fuide-cad --mcp  — stdio MCP bridge to the running app (for `claude mcp add fuide-cad -- fuide-cad --mcp`)
+app="FUIDE CAD"
+if [ "${1:-}" = "--mcp" ]; then
+  for d in /Applications "$HOME/Applications"; do
+    bin="$d/$app.app/Contents/MacOS/fuide-cad"
+    [ -x "$bin" ] && exec "$bin" --mcp
+  done
+  echo "fuide-cad: $app.app not found in /Applications or ~/Applications" >&2; exit 1
+fi
+if [ $# -eq 0 ]; then exec open -na "$app"; fi
+f="$1"
+[ -e "$f" ] || { echo "fuide-cad: not found: $f" >&2; exit 1; }
+abs=$(cd "$(dirname "$f")" && pwd -P)/$(basename "$f")
+exec open -na "$app" --args "$abs"
+SH
+
+chmod +x "$dest/ffm" "$dest/fuide-brew" "$dest/fuide-player" "$dest/fuide-activity-monitor" "$dest/fuide-cad"
+echo "installed: $dest/ffm  $dest/fuide-brew  $dest/fuide-player  $dest/fuide-activity-monitor  $dest/fuide-cad"
 case ":$PATH:" in
   *":$dest:"*) ;;
   *) echo "note: $dest is not on PATH — add to ~/.zshrc:  export PATH=\"$dest:\$PATH\"" ;;

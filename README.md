@@ -11,10 +11,12 @@ crates/fuide/        FUI 部品ライブラリ `fuide` (egui のみ依存)
   fx.rs              走査線、走査帯
   geom.rs            多角形、グロー描画 (チャンファーはオプション)
   pathinput.rs       パス入力欄の `~` / 相対パス展開と Tab 補完 (ffm の GO TO、プレイヤーの OPEN)
+crates/fuide-3d/     3D ビューポート `fuide-3d` (wgpu): Z-up オービットカメラ、ホログラム塗り + グローする線、egui ウィジェット
 apps/file-manager/   FUIDE File Manager — Finder 風ファイルブラウザ (macOS)
 apps/brew/           FUIDE Brew — Homebrew の GUI (brew info --json / search / streaming runner)
 apps/player/         FUIDE Player — オーディオ / 動画プレイヤー (AVFoundation、ファイルと http(s) URL)
 apps/activity-monitor/  FUIDE Activity Monitor — CPU / メモリ / エネルギー / ディスク / ネットワークのプロセス監視 (libproc / Mach / IOKit)
+apps/cad/            FUIDE CAD — パラメトリック 3D CAD (Manifold のメッシュカーネル + truck、フィーチャー列 + 式、ねじ山、STL / JSON、MCP の CAD 専用ツール)
 assets/fonts/        Orbitron (見出し) / Share Tech Mono (データ) — いずれも OFL
 ```
 
@@ -165,6 +167,51 @@ macOS の「アクティビティモニタ」と同じ 5 タブ構成。**上: C
 - **ENERGY は推定値**: Apple の「エネルギー影響」の式は非公開 (`powermetrics` は root 必須) なので、CPU % + ウェイクアップ + ディスク / ネット量の加重 (`sys::energy_estimate`) を出し、パネルに `ESTIMATE :: NOT APPLE'S SCALE` と明記している。順位付けには使える
 - テストは `sys::Source` トレイトの偽実装 (`sys::fake::FakeSource`、10 プロセスの固定マシン) で回す。`sys::mac` の単体テストだけ実機を読む (自分のプロセスが Full、pid 1 が Limited になること)
 
+## FUIDE CAD
+
+```sh
+cargo run -p fuide-cad                      # 空のドキュメント
+cargo run -p fuide-cad -- bracket.cad.json  # ドキュメントを開く
+FUIDE_DEV_SAMPLE=1 cargo run -p fuide-cad   # サンプル (穴あきブラケット) を読み込んで起動
+```
+
+小型ロボットの部品を個人で手軽に設計するための CAD ([#5](https://github.com/kobago/fuide/issues/5))。**マウスで線を引く CAD ではなく、フィーチャー列 (操作履歴) とパラメータを編集する CAD** で、GUI からもテキスト (JSON / MCP) からも同じ列を編集する。単位は mm、値はすべて式 (`w / 2 + 3`、`sqrt` / `sin` / `min` …、パラメータ名を参照できる)。
+
+カーネルは 2 つのハイブリッド (`apps/cad/src/mesh.rs` と `kernel.rs`、どちらも GUI 無しでテストできる):
+
+- **モデリングと表示は Manifold** ([manifold-rust](https://github.com/larsbrubaker/manifold-rust)、OpenSCAD が採用したメッシュブーリアンの純 Rust 移植、Apache-2.0、git 依存で rev 固定)。形状は閉じた三角形メッシュで、ブーリアンは厳密で失敗しない (共平面の面も、稜線を通る円柱も可)。曲面は弦公差 (0.02 mm) から決めた分割数の多角形。稜線は隣接三角形の二面角 (30° 超) から拾う。**ねじ山**はらせんの V 断面を (角度, 高さ) の高さ場として直接メッシュ生成する (`THREAD` フィーチャー)
+- **truck** ([ricosjp/truck](https://github.com/ricosjp/truck)、Rust 製 B-rep カーネル、master を rev 固定) は STEP の入出力のために残してある (未接続)。B-rep でのモデリングは `kernel.rs` に実装とテストが揃っているが、ブーリアンが自由曲面や共平面に弱く、らせん掃引が無いので、モデリングの主役からは外した。切り替え時の知見は下に残す
+
+- **左上: FEATURES** — フィーチャー列 (NAME / KIND / STATE / #)。行クリックで選択、ダブルクリックで抑制 (SUPPRESS) の切替。STATE は `BODY` (結果の実体) / `USED` (後のフィーチャーに消費された) / `ERROR` / `OFF`
+- **左下: PARAMETERS** — 名前 = 式 の一覧 (右に評価値)。`×` で削除、下の NAME / VALUE + ADD で追加
+- **中央: ツールバー 2 段 + VIEWPORT** — 1 段目 `ADD BOX / CYLINDER / THREAD`、`UNION / CUT / INTERSECT` (選択中のフィーチャーを A にして、次にクリックした行が B。ESC で取消)、`MOVE / ROTATE` (選択中のフィーチャーを消費する変換を追加)。2 段目 `ISO / FRONT / TOP / RIGHT / FIT` と表示モード `SHADED / WIRE / X-RAY`。ビューポートはドラッグでオービット、Shift+ドラッグ (または右 / 中ボタン) でパン、ホイールでズーム、ダブルクリックで FIT。結果の実体をホログラム塗り + 稜線のグローで描き、選択中の実体は稜線が注意色になる。XY 平面のグリッドと XYZ 軸 (赤 / 緑 / アクセント)、左下に三軸のトライアド
+- **右上: SELECTED** — 選択中のフィーチャーの名前 (編集可)、入力 (`#3 BODY // #4 MOUNT HOLE`)、各フィールドの式の入力欄 (`ORIGIN.X` … 打ち替えると即再評価)、AXIS チップ、状態、SUPPRESS / REMOVE (後のフィーチャーが使っていれば拒否)
+- **右下: MEASURE** — 選択中 (無ければ最初) の実体の体積 (cm³)、寸法、最小点、重心、三角形数、稜線数
+- **下: イベントログ**、ステータスバー (`KERNEL` ランプは評価中に点滅、エラー数、`AGENT`)
+
+| 操作 | キー |
+|---|---|
+| 選択移動 / 解除 | ↑↓ / Esc |
+| 視点 / フィット | 1 (ISO) 2 (FRONT) 3 (TOP) 4 (RIGHT) / F |
+| 取り消し / やり直し | Cmd+Z / Cmd+Shift+Z (100 段。同じ欄の連続編集は 2 秒以内なら 1 段) |
+| 開く | Cmd+O: **macOS のファイルダイアログ** (`NSOpenPanel`、`.json` のみ)。Cmd+L: アプリ内のパス入力ダイアログ (`~` と相対パス、Tab 補完。**MCP エージェントはこちら**、macOS のダイアログの中は見えない) |
+| 新規 / 保存 / STL 書き出し | Cmd+N / Cmd+S / Cmd+E (保存と書き出しはアプリ内のパス入力ダイアログ。既存ファイルへの上書きは確認ダイアログで、エージェントは人間留保) |
+| フィーチャーを削除 | Cmd+Backspace |
+| 設定 / 終了 | Cmd+, / Cmd+W |
+
+ファイルは JSON (`*.cad.json`): `params` と `features` の列。フィーチャーは `box {origin, size}` / `cylinder {base, axis, radius, height}` / `thread {base, axis, diameter, pitch, length}` (ISO 風の外ねじ。頭や軸芯と UNION する) / `boolean {op, a, b}` / `translate {target, by}` / `rotate {target, origin, axis, angle}`。`a` / `b` / `target` は先のフィーチャーの id で、**参照されたフィーチャーは消費される**: 後のフィーチャーに消費されていない実体が結果 (複数あってよい)。STL は結果の実体をまとめてバイナリで書く。
+
+truck を B-rep モデリングに使っていたときに分かった癖と対処 (`kernel.rs` に残っている):
+
+- ブーリアンの公差は部品寸法の約 1 % が安定。細かすぎると `None` か内部 panic。結果の三角形化はメッシュ公差との組み合わせで panic するので、ブーリアン公差 × ナッジ × メッシュ公差を一緒に探索し、面が全部揃って三角形化できた候補だけ採用する
+- **共平面の面同士は交差計算できない** (`This wire is not simple`): 工具側を重心まわりに 0.9999 / 1.0001 倍して再試行する。角の稜線を円柱が通る退化配置は失敗する
+- カーネルの panic は `catch_unwind` でエラーに変え、フィーチャーを `ERROR` にして続行する (Manifold でも同じ守りを掛けている)。評価は別スレッドで、編集中は前の実体を表示し続ける
+- 面と三角形の順序が並列イテレーターで実行ごとに変わる (重心でソートして固定)。フィレット / チャンファーは無い。らせん掃引が無いのでねじ山は作れない → Manifold へ
+
+MCP: 汎用の `observe` / `click` / `type` に加えて **CAD 専用ツール** がある (下の「AI エージェントから操作する」)。`document` (JSON 全体)、`add_feature` (JSON のフィーチャーをそのまま渡す。`thread` も可、`union` / `cut` / `intersect` は `boolean` の略記)、`set_field` (`size.z` / `axis` / `name` / `suppressed`)、`remove_feature`、`set_param` / `remove_param`、`select`、`measure` (体積・寸法・重心・エラー)、`view` (視点 / モード / フィット)、`export` (STL / JSON。既存ファイルへの上書きは人間留保)、`open` (`new: true` で新規)。各ツールは通常の操作と同じ経路 (ログ、取り消し) を通り、結果の文の後に観測が付く。
+
+撮影フック: `FUIDE_DEV_SAMPLE=1`、`FUIDE_DEV_DIALOG=open|save|overwrite|error`。
+
 ## 設定ウィンドウ (テーマ)
 
 各アプリとも `Cmd+,` かタイトルバーの歯車で設定ウィンドウが開く。パレット (CYAN / AMBER / GREEN)、角 (SQUARE / CHAMFER)、密度 (NORMAL / COMPACT)、AGENT (MCP サーバーの OFF / ON、確認ダイアログを HUMAN / AGENT のどちらが押すか。下の「AI エージェントから操作する」) を選ぶと即座に本体へ反映され、ファイルに保存される。閉じるのは × / Esc / Cmd+W。
@@ -184,6 +231,7 @@ claude mcp add fuide-brew -- "/Applications/FUIDE Brew.app/Contents/MacOS/fuide-
 claude mcp add ffm        -- "/Applications/FUIDE File Manager.app/Contents/MacOS/fuide-file-manager" --mcp
 claude mcp add fuide-player -- "/Applications/FUIDE Player.app/Contents/MacOS/fuide-player" --mcp
 claude mcp add fuide-activity-monitor -- "/Applications/FUIDE Activity Monitor.app/Contents/MacOS/fuide-activity-monitor" --mcp
+claude mcp add fuide-cad -- "/Applications/FUIDE CAD.app/Contents/MacOS/fuide-cad" --mcp
 # 開発中は cargo のバイナリでも同じ
 claude mcp add fuide-brew -- target/debug/fuide-brew --mcp
 ```
@@ -196,6 +244,7 @@ claude mcp add fuide-brew -- target/debug/fuide-brew --mcp
 | `key {key, repeat?}` | `enter` / `escape` / `down` / `cmd+3` / `cmd+f` / `cmd+backspace` など |
 | `wait {ms}` | brew の実行やディレクトリ読込を待ってから観測を返す |
 | `screenshot {scale?, path?}` | 窓を PNG で返す (画面収録権限は不要。`FUIDE_SCREENSHOT` と同じ自己撮影)。`path` を付けると保存もする |
+| アプリ固有のツール | アプリが `Agent::set_tools` で足したもの (CAD の `add_feature` / `measure` など)。`tools/list` に並び、アプリ側で処理されて、結果の文の後に観測が付く。部品を押すわけではないので、代わりに**ツールが触った部品 (追加した行、書き換えた入力欄) へカーソルが飛んで光り**、脇に `TOOL ▸ ADD_FEATURE` と出る (`Agent::finish_tool` の `focus`)。`--mcp` ブリッジも同じ一覧を答える (`bridge::run_with_tools`) |
 
 仕組みと決めごと:
 - **クリックの注入**: egui の `Event::AccessKitActionRequest(Click)` を対象ウィジェットの id に向けて入れる。egui はこれを本物のクリックとして扱う (`Response::clicked()` が真になる) ので、座標を当てる必要がなく、部品が動いても壊れない。キーと文字は `Event::Key` / `Event::Text` で、`Cmd` などの修飾キーはそのフレームの `InputState::modifiers` に載せる
@@ -224,10 +273,10 @@ UPDATE_SNAPSHOTS=true cargo test -p fuide    # 見た目が意図的に変わっ
 |---|---|---|
 | 単体 (fuide) | 各モジュールの `#[cfg(test)]` | `fmt` / `fontmetrics` / `settings` の純関数 |
 | UI (fuide) | `crates/fuide/tests/ui.rs` | [`egui_kittest`](https://docs.rs/egui_kittest) でシェル + パネル + 部品をヘッドレス描画。**アクセシビリティ木**でボタンやタブをラベルから探してクリック・状態確認、**wgpu スナップショット** (`tests/snapshots/*.png`、`kittest.toml` の閾値) で見た目の回帰を検出 |
-| 単体 (アプリ) | `apps/*/src/*.rs` | `fs.rs` / `brew.rs` の純関数 |
+| 単体 (アプリ) | `apps/*/src/*.rs` | `fs.rs` / `brew.rs` の純関数。CAD は `mesh.rs` (Manifold: 穴あき板の体積、共平面の UNION / CUT / INTERSECT が厳密に一致、任意軸の円柱と回転、六角ボルト + 本物のねじ山の UNION、STL)、`kernel.rs` (truck: 同じ検証 + 公差のはしご、共平面のナッジ、panic の捕捉)、`expr.rs` (式)、`doc.rs` (JSON 往復、削除の拒否、フィールド)、`eval.rs` (穴あき板、抑制、エラーの伝播、変換、3 軸のねじ) |
 | 状態機械 (アプリ) | `apps/*/src/app/tests.rs` | `Explorer::with_context(ctx, dir, settings)` / `BrewApp::with_context(ctx, settings)` で `CreationContext` 無しにアプリを作り、`Action` を適用して状態・ログ・ダイアログを検証。ファイルマネージャーは一時ディレクトリで実ファイル操作 (一覧・ソート・フィルター・履歴・リネーム・完全削除・読取拒否) まで通す。ローダーやファイル操作のスレッドは `ui()` と同じく `poll_*` を回して待つ |
 | エージェント (fuide) | `crates/fuide/tests/agent.rs` | kittest 上で `Agent::submit` に `observe` / `click` / `type` / `key` / `screenshot` を流し、注入したクリックが kit の部品に届くこと、無効・人間留保・不明なラベルが拒否されること、PNG が返ることを検証 (ソケット無し) |
-| E2E (アプリ) | `apps/*/src/app/e2e.rs` | `egui_kittest` の `Harness::new_eframe` で本物の `Explorer` / `BrewApp` を起動し、アクセシビリティ木からラベルでクリック・キー入力・文字入力して状態を検証。brew はエージェント経由 (ビュー切替・行選択・Cmd+1・フィルター入力、確認ダイアログの人間留保と `agent_confirm` での確定) も通す。ファイルマネージャー: 行クリック → Enter で移動 / Backspace / Cmd+[ ] / 矢印、Cmd+F → 入力 → Esc、歯車 → パレット・角の変更が保存される。brew (偽 brew): ビュー切替 (タブ / Cmd+数字)、UPGRADE ALL → 確認 → 出力ストリーム → SUCCESS カード → ACKNOWLEDGE、検索ビューで Cmd+F → 入力 → Enter、Cmd+, → パレット保存。設定ウィンドウは kittest では埋め込み `egui::Window` になる。プレイヤー (偽バックエンド): Cmd+L → URL 入力 → Enter で再生開始、Space / PLAY / 矢印 / M / S / STOP、行クリック → Enter、PREVIOUS / NEXT、Backspace で外す、CLEAR。アクティビティモニター (偽ソース): タブ (クリック / Cmd+5) で列が変わる、行を名前でクリック → QUIT が有効に、↑ ↓ / Esc、Cmd+F → 入力 → Esc、QUIT → CANCEL / FORCE QUIT → Enter でプロセスが一覧から消える、root のプロセスは ERROR カード、5 タブ + ダイアログのスナップショット |
+| E2E (アプリ) | `apps/*/src/app/e2e.rs` | `egui_kittest` の `Harness::new_eframe` で本物の `Explorer` / `BrewApp` を起動し、アクセシビリティ木からラベルでクリック・キー入力・文字入力して状態を検証。brew はエージェント経由 (ビュー切替・行選択・Cmd+1・フィルター入力、確認ダイアログの人間留保と `agent_confirm` での確定) も通す。ファイルマネージャー: 行クリック → Enter で移動 / Backspace / Cmd+[ ] / 矢印、Cmd+F → 入力 → Esc、歯車 → パレット・角の変更が保存される。brew (偽 brew): ビュー切替 (タブ / Cmd+数字)、UPGRADE ALL → 確認 → 出力ストリーム → SUCCESS カード → ACKNOWLEDGE、検索ビューで Cmd+F → 入力 → Enter、Cmd+, → パレット保存。設定ウィンドウは kittest では埋め込み `egui::Window` になる。プレイヤー (偽バックエンド): Cmd+L → URL 入力 → Enter で再生開始、Space / PLAY / 矢印 / M / S / STOP、行クリック → Enter、PREVIOUS / NEXT、Backspace で外す、CLEAR。アクティビティモニター (偽ソース): タブ (クリック / Cmd+5) で列が変わる、行を名前でクリック → QUIT が有効に、↑ ↓ / Esc、Cmd+F → 入力 → Esc、QUIT → CANCEL / FORCE QUIT → Enter でプロセスが一覧から消える、root のプロセスは ERROR カード、5 タブ + ダイアログのスナップショット。CAD (実カーネル + wgpu ビューポート): BOX → CYLINDER → 欄に打ち替え → 行 → CUT → 行で穴あき板、`SIZE.Z` の打ち替えで体積が倍になり Cmd+Z で戻る、WIRE / TOP / 数字キー、Cmd+S のダイアログ、エージェントの専用ツール (`set_param` → `add_feature` ×3 → `measure`、拒否される `set_field` / `remove_feature`、`export` の上書き拒否、`document` / `open` / `view`)、サンプルのスナップショット (時計固定・ログ差し替え) |
 | 統合 (実エンジン) | `apps/player/tests/engine.rs` | `harness = false` でメインスレッドを確保し、実 AVFoundation で WAV (PCM、再生完了・再開) と MP4 (H.264 / AAC、メタデータ、フレームのテクスチャ化、速度・音量) と存在しないファイルの失敗を確認。`CFRunLoopRunInMode` でメインの run loop を回しながらポーリングする |
 | 結合 (brew) | 同上 + `apps/brew/fixtures/` | `FUIDE_BREW_BIN` を `fixtures/fake-brew.sh` に向け、本物の worker スレッドとストリーミング実行 (`==>` 行のログ流入、成功/失敗カード、完了後の在庫再取得、検索結果への導入状態の反映) を Homebrew 無しで検証。`info-installed.json` が在庫のフィクスチャ |
 
@@ -249,7 +298,7 @@ UPDATE_SNAPSHOTS=true cargo test -p fuide    # 見た目が意図的に変わっ
 
 ```sh
 cargo install cargo-bundle          # 初回のみ
-./scripts/release.sh                # dist/FUIDE File Manager.{app,dmg}, dist/FUIDE Brew.{app,dmg}, Player, Activity Monitor
+./scripts/release.sh                # dist/FUIDE File Manager.{app,dmg}, dist/FUIDE Brew.{app,dmg}, Player, Activity Monitor, CAD
 ./scripts/release.sh fuide-brew       # 1 本だけ
 ```
 
@@ -262,7 +311,7 @@ cargo install cargo-bundle          # 初回のみ
 ## ターミナルから開く (`open` 風)
 
 ```sh
-./scripts/install-cli.sh            # /opt/homebrew/bin (書込可なら) or ~/.local/bin に ffm / fuide-brew / fuide-player / fuide-activity-monitor を置く
+./scripts/install-cli.sh            # /opt/homebrew/bin (書込可なら) or ~/.local/bin に ffm / fuide-brew / fuide-player / fuide-activity-monitor / fuide-cad を置く
 ffm                                 # カレントディレクトリを開く
 ffm ~/Downloads                     # 指定ディレクトリを開く (相対パス可)
 fuide-brew

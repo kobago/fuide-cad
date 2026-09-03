@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect x="64" y="64" width="896" height="896" fill="#04120A"/>
+  <rect x="64" y="64" width="896" height="896" fill="none" stroke="#46FF8C" stroke-width="14"/>
+  <rect x="112" y="112" width="800" height="800" fill="none" stroke="#1C7A44" stroke-width="6"/>
+  <g stroke="#1C7A44" stroke-width="6">
+    <line x1="200" y1="760" x2="824" y2="760"/>
+    <line x1="200" y1="700" x2="824" y2="700"/>
+    <line x1="300" y1="640" x2="724" y2="640"/>
+  </g>
+  <polygon points="340,420 620,340 700,480 420,560" fill="#46FF8C" opacity="0.18"/>
+  <polygon points="420,560 700,480 700,700 420,780" fill="#46FF8C" opacity="0.10"/>
+  <polygon points="340,420 420,560 420,780 340,640" fill="#46FF8C" opacity="0.14"/>
+  <g fill="none" stroke="#46FF8C" stroke-width="28" stroke-linejoin="miter">
+    <polygon points="340,420 620,340 700,480 420,560"/>
+    <polyline points="420,560 420,780 340,640 340,420"/>
+    <polyline points="420,780 700,700 700,480"/>
+  </g>
+  <g fill="none" stroke="#46FF8C" stroke-width="12" opacity="0.7">
+    <polyline points="340,640 620,560 620,340"/>
+    <line x1="620" y1="560" x2="700" y2="700"/>
+  </g>
+  <circle cx="590" cy="470" r="34" fill="none" stroke="#46FF8C" stroke-width="20"/>
+  <rect x="140" y="140" width="220" height="40" fill="#46FF8C" opacity="0.85"/>
+</svg>

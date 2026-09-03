@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install terminal launchers `ffm [DIR]` (FUIDE File Manager) and `fuide-brew`, like `open`.
+# Install terminal launchers `ffm [DIR]` (FUIDE File Manager), `fuide-brew` and
+# `fuide-player [FILE|URL]...`, like `open`.
 #   ./scripts/install-cli.sh            # into /opt/homebrew/bin if writable, else ~/.local/bin
 #   ./scripts/install-cli.sh ~/bin      # explicit directory
 # The launchers use `open -na`, so the app starts detached via LaunchServices (Dock icon,
@@ -45,8 +46,35 @@ fi
 exec open -a "$app"
 SH
 
-chmod +x "$dest/ffm" "$dest/fuide-brew"
-echo "installed: $dest/ffm  $dest/fuide-brew"
+cat > "$dest/fuide-player" <<'SH'
+#!/bin/sh
+# fuide-player [FILE|URL]... — open FUIDE Player with the items queued (first one plays)
+# fuide-player --mcp         — stdio MCP bridge to the running app
+app="FUIDE Player"
+if [ "${1:-}" = "--mcp" ]; then
+  for d in /Applications "$HOME/Applications"; do
+    bin="$d/$app.app/Contents/MacOS/fuide-player"
+    [ -x "$bin" ] && exec "$bin" --mcp
+  done
+  echo "fuide-player: $app.app not found in /Applications or ~/Applications" >&2; exit 1
+fi
+[ $# -eq 0 ] && exec open -a "$app"
+# relative paths are resolved against the terminal's cwd; URLs pass through
+set -- "$@"
+args=""
+for item in "$@"; do
+  case "$item" in
+    *://*) abs="$item" ;;
+    *) [ -e "$item" ] || { echo "fuide-player: no such file: $item" >&2; exit 1; }
+       abs=$(cd "$(dirname "$item")" && pwd -P)/$(basename "$item") ;;
+  esac
+  args="$args \"$abs\""
+done
+eval exec open -na \"\$app\" --args $args
+SH
+
+chmod +x "$dest/ffm" "$dest/fuide-brew" "$dest/fuide-player"
+echo "installed: $dest/ffm  $dest/fuide-brew  $dest/fuide-player"
 case ":$PATH:" in
   *":$dest:"*) ;;
   *) echo "note: $dest is not on PATH — add to ~/.zshrc:  export PATH=\"$dest:\$PATH\"" ;;

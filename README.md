@@ -1,6 +1,6 @@
 # FUIDE — FUI Develop Environment
 
-Sci-Fi / FUI (Futuristic UI) デザインのアプリを作るための開発環境。中核は egui (0.36) 向けの `fuide` クレート (テーマ・窓シェル・部品) で、その上に最初のアプリとしてファイルマネージャーと Homebrew フロントエンド (macOS デスクトップ) を載せています。今後はモバイルなどデスクトップ以外のアプリも同じ基盤で作る予定です。
+Sci-Fi / FUI (Futuristic UI) デザインのアプリを作るための開発環境。中核は egui (0.36) 向けの `fuide` クレート (テーマ・窓シェル・部品) で、その上にアプリとしてファイルマネージャー、Homebrew フロントエンド、オーディオ / 動画プレイヤー (macOS デスクトップ) を載せています。今後はモバイルなどデスクトップ以外のアプリも同じ基盤で作る予定です。
 
 ```
 crates/fuide/        FUI 部品ライブラリ `fuide` (egui のみ依存)
@@ -10,8 +10,10 @@ crates/fuide/        FUI 部品ライブラリ `fuide` (egui のみ依存)
   widgets.rs         ナビタブ、ボタン、セグメントバー、円弧ゲージ、ランプ、ログフィード、読み出し行
   fx.rs              走査線、走査帯
   geom.rs            多角形、グロー描画 (チャンファーはオプション)
-apps/file-manager/       FUIDE File Manager — Finder 風ファイルブラウザ (macOS)
+  pathinput.rs       パス入力欄の `~` / 相対パス展開と Tab 補完 (ffm の GO TO、プレイヤーの OPEN)
+apps/file-manager/   FUIDE File Manager — Finder 風ファイルブラウザ (macOS)
 apps/brew/           FUIDE Brew — Homebrew の GUI (brew info --json / search / streaming runner)
+apps/player/         FUIDE Player — オーディオ / 動画プレイヤー (AVFoundation、ファイルと http(s) URL)
 assets/fonts/        Orbitron (見出し) / Share Tech Mono (データ) — いずれも OFL
 ```
 
@@ -76,23 +78,76 @@ cargo run -p fuide-brew
 - 撮影フック: `FUIDE_DEV_DIALOG=uninstall|upgrade|error|success`、`FUIDE_DEV_RUN="doctor"` (起動時に brew コマンドを流す)、`FUIDE_DEV_SEARCH=ripgrep`
 - `FUIDE_BREW_BIN=/path/to/brew` で呼び出す `brew` を差し替えられる (テストは `fixtures/fake-brew.sh` を使う。`FUIDE_FAKE_BREW_LOG` にコールを記録)
 
+## FUIDE Player
+
+```sh
+cargo run -p fuide-player                                   # 空のキューで起動
+cargo run -p fuide-player -- ~/Movies/clip.mp4 song.m4a     # 引数をキューに入れて先頭を再生
+cargo run -p fuide-player -- https://example.com/live.m3u8  # URL (HLS も) も同じ
+FUIDE_DEV_MUTE=1 cargo run -p fuide-player -- apps/player/fixtures/clip.mp4   # 音を出さずに
+```
+
+デコーダは **macOS 標準の AVFoundation** (`objc2-av-foundation`)。ライブラリの同梱なし、ハードウェアデコード、対応フォーマットは「macOS が再生できるもの」= 普遍的なものだけに絞っている。
+
+| 種別 | 対応 | 非対応 |
+|---|---|---|
+| 動画コンテナ | MP4 / M4V / MOV | MKV / WebM / AVI |
+| 動画コーデック | H.264 / HEVC / ProRes、AV1 (M3 以降のハードウェア) | VP9 / VP8 |
+| 音声 | MP3 / AAC (M4A) / ALAC / FLAC / WAV / AIFF | OGG Vorbis / Opus (.opus) |
+| 入口 | ローカルファイル、`http(s)://` の URL (プログレッシブ MP4 / MP3、HLS `.m3u8`)、`file://` | それ以外のスキーム |
+
+- 起動時は **シアターモード**: SCREEN とその下の TRANSPORT だけで、キュー / メディア情報 / ログは **Tab** で出し入れする。映像の矩形には何も描かない (走査線も除外)。ファイル名・埋め込みタイトル・状態 (PAUSED / BUFFERING / ACQUIRING / SIGNAL LOST)・コーデック・タイムコードは映像の上の 1 行 (HUD ストリップ) に出る。映像のクリックで再生 / 一時停止
+- 左: QUEUE (キュー)。行クリックで選択、ダブルクリック / Enter で再生、Backspace で外す。OPEN FILE / OPEN URL / REMOVE / CLEAR。Finder や ffm からファイルをドロップするとキューに加わる (何も再生していなければ先頭が始まる)
+- 中央上: SCREEN。HUD ストリップ (ファイル名 `::` タイトル、状態、コーデック・解像度・fps・音声、L/R レベルメーター、タイムコード `MM:SS.t / MM:SS.t`) の下に映像をレターボックスで等倍比表示。音声のみのときは曲名・アーティスト・アルバムと進捗リング、その下に **スペクトラム** (48 バンド対数周波数軸 40 Hz〜16 kHz、セグメント表示、ピークホールド)。音声は `MTAudioProcessingTap` で AVPlayer が実際に鳴らしている PCM を取り、UI スレッドで 2048 点 FFT する (HLS は AVFoundation がオーディオミックスを適用しないためスペクトラムなし)。映像が無い状態のプレート: `NO SIGNAL` (空) / `ACQUIRING SIGNAL` (読込中、走査帯) / `SIGNAL LOST` (失敗)
+- 中央下: TRANSPORT。シークバー (ドラッグでスクラブ、ホバーで時刻、バッファ済み範囲を薄く表示。ライブ配信は走査帯)、PREVIOUS / PLAY / NEXT / STOP、時刻、右側に LOOP (OFF → ALL → ONE)、速度 (0.5 / 1 / 1.25 / 1.5 / 2X)、MUTE、音量バー
+- 右: MEDIA。曲名、アーティスト / アルバム (埋め込みメタデータ)、ソース種別、コンテナ、長さ、映像 (コーデック / フレーム / fps / ビットレート)、音声 (コーデック / サンプルレート / チャンネル / ビットレート)、バッファ、場所 (パス or URL)。PLAY THIS / COPY (場所をクリップボードへ) / REMOVE
+- 下: イベントログ (queue / play / end of track / 失敗)、ステータスバー (経過時間、キュー数、現在位置 / 長さ、FPS)、ランプ `STANDBY` / `ACQUIRING` / `PLAYING` / `PAUSED` / `BUFFERING` / `SIGNAL LOST`、`NET` (ネットワーク再生中)、`MUTED`
+- 再生が終わるとループ設定に従って次へ (OFF: 次があれば次、無ければ停止。ALL: 末尾から先頭へ。ONE: 同じ曲をもう一度)。ロードに失敗した曲は `ERROR` カードで報告して外す (キューには残る)
+
+| 操作 | キー |
+|---|---|
+| 再生 / 一時停止 | Space (何も読み込んでいなければ選択行、無ければ先頭を再生) |
+| シーク | ← / → 5 秒、Shift 付きで 30 秒。シークバーのクリック / ドラッグ |
+| 音量 / ミュート | ↑ / ↓ (5% 刻み) / M |
+| 前後の曲 | Cmd+← / Cmd+→ (PREVIOUS は再生 3 秒以降なら曲頭へ戻る) |
+| ループ / 速度 | L / S |
+| 選択行を再生 / キューから外す | Enter / Backspace |
+| ファイルを開く | Cmd+O または OPEN FILE: **macOS のファイルダイアログ** (`NSOpenPanel`、複数選択可)。選べるのは AVFoundation が再生できる種別だけ (`AVURLAsset.audiovisualContentTypes` でフィルタ)。選んだものをキューに入れて先頭を再生 |
+| URL / パスを開く | Cmd+L または OPEN URL: アプリ内ダイアログ。http(s) URL のほか、ローカルパス (`~`・相対パス可、Tab でファイル・ディレクトリ名を補完) も受け付ける。Enter = PLAY、ADD TO QUEUE = 追加のみ。**MCP エージェントはこちらを使う** (macOS のダイアログの中はエージェントから見えない) |
+| パネルの表示 / 非表示 | Tab (映像のクリックは再生 / 一時停止) |
+| 全画面 | F、映像のダブルクリック、FULL ボタン。全画面中はシェル (タイトルバー・ステータスバー) も消え、Esc で戻る |
+| キューの並べ替え | Cmd+↑ / Cmd+↓ で選択行を移動、または行をドラッグ (挿入位置に線が出る) |
+| 字幕 | C または CC チップで OFF → 1 本目 → … → OFF。埋め込み字幕トラック (mov_text / HLS の WebVTT など、`AVMediaCharacteristicLegible` のメディア選択) を `AVPlayerItemLegibleOutput` で受け取り、映像の下の字幕バンドに描く (映像には重ねない) |
+| チャプター | `[` / `]` で前後のチャプター (再生 3 秒以降の `[` は章頭へ)。シークバーに目盛り、HUD ストリップに `CH 2/3 タイトル`、MEDIA パネルにクリックで移動できる一覧。QuickTime のチャプタートラックを `chapterMetadataGroupsBestMatchingPreferredLanguages` で読む |
+| パレット / 設定 / 終了 | Cmd+1..3 / Cmd+, / Cmd+W |
+
+実装メモ:
+
+- 再生は `AVPlayer` + `AVPlayerItem` (`AVURLAsset`)。UI スレッドが毎フレーム `Engine::poll` で状態 (status / currentTime / duration / loadedTimeRanges / timeControlStatus) を読む **ポーリング方式**で、KVO や通知は使わない。AVFoundation のオブジェクトは全部メインスレッドに置く (`Send` ではない)
+- 映像は `AVPlayerItemVideoOutput` (32BGRA、IOSurface 裏付け) から `copyPixelBufferForItemTime` で取り出す。**既定は GPU 共有**: ピクセルバッファの IOSurface を `MTLDevice.newTextureWithDescriptor:iosurface:plane:` で Metal テクスチャにし、`wgpu::hal::metal::Device::texture_from_raw` → `Device::create_texture_from_hal` で wgpu に包み、`egui_wgpu::Renderer::register_native_texture` / `update_egui_texture_from_wgpu_texture` で egui のテクスチャ ID に載せる (コピーなし。4K でも CPU を使わない)。直近 3 フレームのバッファは GPU が読み終わるまで保持する。Metal 以外や IOSurface が取れない場合は BGRA → RGBA の CPU コピーに落ちる。どちらで動いているかは MEDIA パネルの `FRAMES` (GPU SHARED / CPU COPY) とログに出る
+- トラック情報は item が `ReadyToPlay` になってから `AVPlayerItemTrack → AVAssetTrack → CMFormatDescription` (fourcc、寸法、fps、`AudioStreamBasicDescription`) を読む。メタデータ (title / artist / album) は `loadValuesAsynchronouslyForKeys` の完了フラグを見てから `commonMetadata` を読む (ネットワーク上のアセットで同期アクセスすると UI が止まるため)
+- 終端検出は `actionAtItemEnd = Pause` にして「再生中だったのに止まり、位置が duration に達した」で判定。ライブ配信は duration が不定なので `LIVE` 表示
+- **AVFoundation は状態更新をメインスレッドの run loop (main dispatch queue) 経由で届ける**。cargo test のワーカースレッドではいつまでも `Loading` のままなので、実エンジンのテストは `harness = false` の統合テスト (`apps/player/tests/engine.rs`) がメインスレッドで `CFRunLoopRunInMode` を回しながら行う。アプリ側の状態遷移と E2E は `Backend` トレイトの偽実装 (`player::fake::FakeBackend`) で回す
+- 撮影フック: `FUIDE_DEV_DIALOG=open|error`、`FUIDE_DEV_MUTE=1`。テスト用メディアは `apps/player/fixtures/` (`clip.mp4` = ffmpeg の testsrc 2 秒 H.264 + AAC、`tone.m4a` = 3 秒のサイン波 AAC、`chapters.mp4` = 6 秒で 3 チャプター + mov_text 字幕、いずれも title / artist 付き)
+
 ## 設定ウィンドウ (テーマ)
 
-両アプリとも `Cmd+,` かタイトルバーの歯車で設定ウィンドウが開く。パレット (CYAN / AMBER / GREEN)、角 (SQUARE / CHAMFER)、密度 (NORMAL / COMPACT)、AGENT (MCP サーバーの OFF / ON、確認ダイアログを HUMAN / AGENT のどちらが押すか。下の「AI エージェントから操作する」) を選ぶと即座に本体へ反映され、ファイルに保存される。閉じるのは × / Esc / Cmd+W。
+各アプリとも `Cmd+,` かタイトルバーの歯車で設定ウィンドウが開く。パレット (CYAN / AMBER / GREEN)、角 (SQUARE / CHAMFER)、密度 (NORMAL / COMPACT)、AGENT (MCP サーバーの OFF / ON、確認ダイアログを HUMAN / AGENT のどちらが押すか。下の「AI エージェントから操作する」) を選ぶと即座に本体へ反映され、ファイルに保存される。閉じるのは × / Esc / Cmd+W。
 
 - 設定ウィンドウは egui の **子 viewport** (別のネイティブウィンドウ、`show_viewport_deferred`) で、本体と同じ `fuide::Shell` を `tool_window()` (閉じるボタンのみ・リサイズなし・アイドルアニメ無し = 入力があったときだけ再描画) で描いている。フォントや Visuals は `egui::Context` 全体で共有なので、子ウィンドウで変えた瞬間に本体も変わる
 - 子 viewport は eframe 0.36 では撮影できない (immediate は `Screenshot` コマンドを捨てる。deferred は macOS でイベントループが約 1 秒止まったあと再描画が来なくなる)。撮影は `FUIDE_DEV_EMBED=1` で本体に埋め込んで行う (上の「開発用スクリーンショット」)
-- 保存先は macOS では `~/Library/Application Support/FUIDE/<app>.conf` (`file-manager.conf` / `brew.conf`)、他 OS では `$XDG_CONFIG_HOME/fuide/` か `~/.config/fuide/`。`FUIDE_CONFIG_DIR` で置き換え可。中身は `palette=amber` のような `key=value` 行 (`palette` / `chamfer` / `compact` / `agent` / `agent_confirm`、ログパネルをドラッグすると `log_height`、ログパネルを開閉すると `log_open`) で、知らないキーは無視、足りないキーは既定値
+- 保存先は macOS では `~/Library/Application Support/FUIDE/<app>.conf` (`file-manager.conf` / `brew.conf` / `player.conf`)、他 OS では `$XDG_CONFIG_HOME/fuide/` か `~/.config/fuide/`。`FUIDE_CONFIG_DIR` で置き換え可。中身は `palette=amber` のような `key=value` 行 (`palette` / `chamfer` / `compact` / `agent` / `agent_confirm`、ログパネルをドラッグすると `log_height`、ログパネルを開閉すると `log_open`) で、知らないキーは無視、足りないキーは既定値
 - 自作アプリで使うには `fuide::Settings` と `fuide::SettingsWindow` (下の「クレートの使い方」参照)
 
 ## AI エージェントから操作する (MCP)
 
-両アプリは **MCP サーバー** を内蔵している。設定ウィンドウ (`Cmd+,`) の AGENT パネルで `ON` にすると Unix ソケットで待ち受け、Claude Code などの MCP クライアントが画面を読み・クリックし・文字を打てる。人が見ている前で AI が FUI を操作するための機能なので、操作は画面に見える形で行われる: エージェント用の照準カーソルが目標までなめらかに移動し、押した部品が光り、直前の操作 (`CLICK ▸ OUTDATED`) がカーソル脇に出る。ステータスバーには `AGENT` ランプが点く (操作中は点滅)。
+各アプリは **MCP サーバー** を内蔵している。設定ウィンドウ (`Cmd+,`) の AGENT パネルで `ON` にすると Unix ソケットで待ち受け、Claude Code などの MCP クライアントが画面を読み・クリックし・文字を打てる。人が見ている前で AI が FUI を操作するための機能なので、操作は画面に見える形で行われる: エージェント用の照準カーソルが目標までなめらかに移動し、押した部品が光り、直前の操作 (`CLICK ▸ OUTDATED`) がカーソル脇に出る。ステータスバーには `AGENT` ランプが点く (操作中は点滅)。
 
 ```sh
 # Claude Code に登録 (ラッパーを入れていれば `ffm --mcp` / `fuide-brew --mcp` でも良い)
 claude mcp add fuide-brew -- "/Applications/FUIDE Brew.app/Contents/MacOS/fuide-brew" --mcp
 claude mcp add ffm        -- "/Applications/FUIDE File Manager.app/Contents/MacOS/fuide-file-manager" --mcp
+claude mcp add fuide-player -- "/Applications/FUIDE Player.app/Contents/MacOS/fuide-player" --mcp
 # 開発中は cargo のバイナリでも同じ
 claude mcp add fuide-brew -- target/debug/fuide-brew --mcp
 ```
@@ -136,7 +191,8 @@ UPDATE_SNAPSHOTS=true cargo test -p fuide    # 見た目が意図的に変わっ
 | 単体 (アプリ) | `apps/*/src/*.rs` | `fs.rs` / `brew.rs` の純関数 |
 | 状態機械 (アプリ) | `apps/*/src/app/tests.rs` | `Explorer::with_context(ctx, dir, settings)` / `BrewApp::with_context(ctx, settings)` で `CreationContext` 無しにアプリを作り、`Action` を適用して状態・ログ・ダイアログを検証。ファイルマネージャーは一時ディレクトリで実ファイル操作 (一覧・ソート・フィルター・履歴・リネーム・完全削除・読取拒否) まで通す。ローダーやファイル操作のスレッドは `ui()` と同じく `poll_*` を回して待つ |
 | エージェント (fuide) | `crates/fuide/tests/agent.rs` | kittest 上で `Agent::submit` に `observe` / `click` / `type` / `key` / `screenshot` を流し、注入したクリックが kit の部品に届くこと、無効・人間留保・不明なラベルが拒否されること、PNG が返ることを検証 (ソケット無し) |
-| E2E (アプリ) | `apps/*/src/app/e2e.rs` | `egui_kittest` の `Harness::new_eframe` で本物の `Explorer` / `BrewApp` を起動し、アクセシビリティ木からラベルでクリック・キー入力・文字入力して状態を検証。brew はエージェント経由 (ビュー切替・行選択・Cmd+1・フィルター入力、確認ダイアログの人間留保と `agent_confirm` での確定) も通す。ファイルマネージャー: 行クリック → Enter で移動 / Backspace / Cmd+[ ] / 矢印、Cmd+F → 入力 → Esc、歯車 → パレット・角の変更が保存される。brew (偽 brew): ビュー切替 (タブ / Cmd+数字)、UPGRADE ALL → 確認 → 出力ストリーム → SUCCESS カード → ACKNOWLEDGE、検索ビューで Cmd+F → 入力 → Enter、Cmd+, → パレット保存。設定ウィンドウは kittest では埋め込み `egui::Window` になる |
+| E2E (アプリ) | `apps/*/src/app/e2e.rs` | `egui_kittest` の `Harness::new_eframe` で本物の `Explorer` / `BrewApp` を起動し、アクセシビリティ木からラベルでクリック・キー入力・文字入力して状態を検証。brew はエージェント経由 (ビュー切替・行選択・Cmd+1・フィルター入力、確認ダイアログの人間留保と `agent_confirm` での確定) も通す。ファイルマネージャー: 行クリック → Enter で移動 / Backspace / Cmd+[ ] / 矢印、Cmd+F → 入力 → Esc、歯車 → パレット・角の変更が保存される。brew (偽 brew): ビュー切替 (タブ / Cmd+数字)、UPGRADE ALL → 確認 → 出力ストリーム → SUCCESS カード → ACKNOWLEDGE、検索ビューで Cmd+F → 入力 → Enter、Cmd+, → パレット保存。設定ウィンドウは kittest では埋め込み `egui::Window` になる。プレイヤー (偽バックエンド): Cmd+L → URL 入力 → Enter で再生開始、Space / PLAY / 矢印 / M / S / STOP、行クリック → Enter、PREVIOUS / NEXT、Backspace で外す、CLEAR |
+| 統合 (実エンジン) | `apps/player/tests/engine.rs` | `harness = false` でメインスレッドを確保し、実 AVFoundation で WAV (PCM、再生完了・再開) と MP4 (H.264 / AAC、メタデータ、フレームのテクスチャ化、速度・音量) と存在しないファイルの失敗を確認。`CFRunLoopRunInMode` でメインの run loop を回しながらポーリングする |
 | 結合 (brew) | 同上 + `apps/brew/fixtures/` | `FUIDE_BREW_BIN` を `fixtures/fake-brew.sh` に向け、本物の worker スレッドとストリーミング実行 (`==>` 行のログ流入、成功/失敗カード、完了後の在庫再取得、検索結果への導入状態の反映) を Homebrew 無しで検証。`info-installed.json` が在庫のフィクスチャ |
 
 決めごと:

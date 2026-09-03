@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build distributable .app bundles and DMGs (Apple Silicon).
-#   ./scripts/release.sh              # both apps
+#   ./scripts/release.sh              # all apps
 #   ./scripts/release.sh fuide-brew     # one app
 # Output: dist/<App>.app and dist/<App>.dmg
 #
@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."   # cargo-bundle resolves icon paths from the current di
 command -v cargo-bundle >/dev/null || { echo "cargo-bundle missing: cargo install cargo-bundle" >&2; exit 1; }
 TARGET=aarch64-apple-darwin
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
-APPS=("$@"); [ ${#APPS[@]} -eq 0 ] && APPS=(fuide-file-manager fuide-brew)
+APPS=("$@"); [ ${#APPS[@]} -eq 0 ] && APPS=(fuide-file-manager fuide-brew fuide-player)
 mkdir -p dist
 
 for app in "${APPS[@]}"; do

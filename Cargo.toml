@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/fuide", "apps/file-manager", "apps/brew", "apps/player"]
+members = ["crates/fuide", "apps/file-manager", "apps/brew", "apps/player", "apps/activity-monitor"]
 
 [workspace.package]
 edition = "2021"

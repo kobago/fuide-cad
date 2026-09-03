@@ -1,6 +1,6 @@
 # FUIDE — FUI Develop Environment
 
-Sci-Fi / FUI (Futuristic UI) デザインのアプリを作るための開発環境。中核は egui (0.36) 向けの `fuide` クレート (テーマ・窓シェル・部品) で、その上にアプリとしてファイルマネージャー、Homebrew フロントエンド、オーディオ / 動画プレイヤー (macOS デスクトップ) を載せています。今後はモバイルなどデスクトップ以外のアプリも同じ基盤で作る予定です。
+Sci-Fi / FUI (Futuristic UI) デザインのアプリを作るための開発環境。中核は egui (0.36) 向けの `fuide` クレート (テーマ・窓シェル・部品) で、その上にアプリとしてファイルマネージャー、Homebrew フロントエンド、オーディオ / 動画プレイヤー、アクティビティモニター (macOS デスクトップ) を載せています。今後はモバイルなどデスクトップ以外のアプリも同じ基盤で作る予定です。
 
 ```
 crates/fuide/        FUI 部品ライブラリ `fuide` (egui のみ依存)
@@ -14,6 +14,7 @@ crates/fuide/        FUI 部品ライブラリ `fuide` (egui のみ依存)
 apps/file-manager/   FUIDE File Manager — Finder 風ファイルブラウザ (macOS)
 apps/brew/           FUIDE Brew — Homebrew の GUI (brew info --json / search / streaming runner)
 apps/player/         FUIDE Player — オーディオ / 動画プレイヤー (AVFoundation、ファイルと http(s) URL)
+apps/activity-monitor/  FUIDE Activity Monitor — CPU / メモリ / エネルギー / ディスク / ネットワークのプロセス監視 (libproc / Mach / IOKit)
 assets/fonts/        Orbitron (見出し) / Share Tech Mono (データ) — いずれも OFL
 ```
 
@@ -130,6 +131,40 @@ FUIDE_DEV_MUTE=1 cargo run -p fuide-player -- apps/player/fixtures/clip.mp4   # 
 - **AVFoundation は状態更新をメインスレッドの run loop (main dispatch queue) 経由で届ける**。cargo test のワーカースレッドではいつまでも `Loading` のままなので、実エンジンのテストは `harness = false` の統合テスト (`apps/player/tests/engine.rs`) がメインスレッドで `CFRunLoopRunInMode` を回しながら行う。アプリ側の状態遷移と E2E は `Backend` トレイトの偽実装 (`player::fake::FakeBackend`) で回す
 - 撮影フック: `FUIDE_DEV_DIALOG=open|error`、`FUIDE_DEV_MUTE=1`。テスト用メディアは `apps/player/fixtures/` (`clip.mp4` = ffmpeg の testsrc 2 秒 H.264 + AAC、`tone.m4a` = 3 秒のサイン波 AAC、`chapters.mp4` = 6 秒で 3 チャプター + mov_text 字幕、いずれも title / artist 付き)
 
+## FUIDE Activity Monitor
+
+```sh
+cargo run -p fuide-activity-monitor
+cargo run -p fuide-activity-monitor --example probe    # UI 無しで 2 回サンプリングして数値を出す (Activity Monitor と突き合わせる用)
+```
+
+macOS の「アクティビティモニタ」と同じ 5 タブ構成。**上: CPU / MEMORY / ENERGY / DISK / NETWORK** のタブ (Cmd+1..5)、**中央: プロセス一覧** (列はタブごとに変わる。列見出しでソート、Cmd+F でフィルター (名前 / ユーザー / PID)、MY PROCESSES で自分のプロセスだけ)、**右: 選択中のプロセスの詳細** (何も選んでいなければこの Mac の概要)、**下: タブごとの機械全体の要約** (時系列グラフ + 読み出し) とイベントログ。更新間隔はツールバーの `1 S / 2 S / 5 S`。サンプリングは別スレッドで行い、UI は他のアプリと同じくアイドル 20 fps。
+
+| タブ | プロセス列 | 要約 |
+|---|---|---|
+| CPU | % CPU、CPU TIME、THREADS、WAKEUPS (アイドルウェイクアップ /s)、STATE | 合計 / システムの時系列、コア別セグメントバー (P / E クラスタ別)、user / system / idle、負荷平均、GPU 使用率 |
+| MEMORY | MEMORY (phys footprint = アクティビティモニタの「メモリ」列)、RESIDENT、THREADS | 使用率の時系列、円弧ゲージ、メモリプレッシャー、物理 / 使用中 / App / ワイヤード / 圧縮 / キャッシュ / スワップ |
+| ENERGY | ENERGY (推定)、% CPU、WAKEUPS、NO SLEEP (スリープを妨げている) | 合計の時系列、バッテリー残量 / 電源 / 残り時間 (バッテリーの無い Mac は NONE)、スリープを妨げているプロセス |
+| DISK | READ/S、WRITE/S、TOTAL READ、TOTAL WRITE | 読み書きの時系列、IO/s、byte/s、起動以来の合計 |
+| NETWORK | IN/S、OUT/S、TOTAL IN、TOTAL OUT | 送受信の時系列、パケット/s、byte/s、合計 |
+
+| 操作 | キー |
+|---|---|
+| タブ | Cmd+1..5、または上のタブをクリック |
+| フィルター | Cmd+F → 入力、Esc でクリア |
+| 選択 | 行クリック、↑ / ↓、Esc で解除 |
+| 終了 / 強制終了 | QUIT (SIGTERM) / FORCE QUIT (SIGKILL) ボタン、Cmd+Alt+Q / Cmd+Alt+Shift+Q。どちらも確認ダイアログ (枠色 = 注意 / 危険)。エージェントは人間留保 |
+| 今すぐサンプリング / 設定 | Cmd+R / Cmd+, |
+
+データの出どころ (root 無しで動かすための決めごと):
+
+- **自分のプロセス**は `libproc` (`proc_pidinfo` / `proc_pid_rusage`) で区間計測の CPU %、phys footprint、スレッド数、アイドルウェイクアップ、ディスク読み書き byte、コマンドライン (`KERN_PROCARGS2`) を取る。CPU 時間は mach tick 単位なので `mach_timebase_info` で秒に直す (Apple Silicon では 125/3 ns)
+- **他ユーザーのプロセス**には `libproc` が `EPERM` を返す (アクティビティモニタ・`top`・`ps` は setuid root)。そこで一覧のベースは `ps -axo ...` (setuid、約 40 ms) から取り、libproc が答えた行だけ上書きする。ps 由来の値は **`~` 付き** (CPU % はカーネルの減衰平均、メモリは RSS) で、取れない列は `--`。QUIT も自分のプロセス以外は拒否されるので、ダイアログに先に書いてある
+- **プロセスごとのネットワーク**には公開 API が無い。`nettop -n -P -L 1 -x -J bytes_in,bytes_out` (user 権限で動く、約 10 ms。`-n` を忘れると名前解決で数秒かかる) を毎サンプル呼んで累積 byte を取り、差分でレートにする
+- 機械全体: CPU は `host_processor_info` (コアごとの tick、E コアが先の番号)、メモリは `host_statistics64` (App = internal − purgeable、キャッシュ = external + purgeable、使用中 = App + ワイヤード + 圧縮)、スワップ `vm.swapusage`、プレッシャー `kern.memorystatus_vm_pressure_level`、ディスクは IOKit `IOBlockStorageDriver` の `Statistics`、GPU は `IOAccelerator` の `PerformanceStatistics`、ネットワークは `sysctl NET_RT_IFLIST2` (`if_data64`、ループバック除外)、バッテリーは `IOPSCopyPowerSourcesInfo`、スリープ阻止は `IOPMCopyAssertionsByProcess` (`AssertType` キー)
+- **ENERGY は推定値**: Apple の「エネルギー影響」の式は非公開 (`powermetrics` は root 必須) なので、CPU % + ウェイクアップ + ディスク / ネット量の加重 (`sys::energy_estimate`) を出し、パネルに `ESTIMATE :: NOT APPLE'S SCALE` と明記している。順位付けには使える
+- テストは `sys::Source` トレイトの偽実装 (`sys::fake::FakeSource`、10 プロセスの固定マシン) で回す。`sys::mac` の単体テストだけ実機を読む (自分のプロセスが Full、pid 1 が Limited になること)
+
 ## 設定ウィンドウ (テーマ)
 
 各アプリとも `Cmd+,` かタイトルバーの歯車で設定ウィンドウが開く。パレット (CYAN / AMBER / GREEN)、角 (SQUARE / CHAMFER)、密度 (NORMAL / COMPACT)、AGENT (MCP サーバーの OFF / ON、確認ダイアログを HUMAN / AGENT のどちらが押すか。下の「AI エージェントから操作する」) を選ぶと即座に本体へ反映され、ファイルに保存される。閉じるのは × / Esc / Cmd+W。
@@ -148,6 +183,7 @@ FUIDE_DEV_MUTE=1 cargo run -p fuide-player -- apps/player/fixtures/clip.mp4   # 
 claude mcp add fuide-brew -- "/Applications/FUIDE Brew.app/Contents/MacOS/fuide-brew" --mcp
 claude mcp add ffm        -- "/Applications/FUIDE File Manager.app/Contents/MacOS/fuide-file-manager" --mcp
 claude mcp add fuide-player -- "/Applications/FUIDE Player.app/Contents/MacOS/fuide-player" --mcp
+claude mcp add fuide-activity-monitor -- "/Applications/FUIDE Activity Monitor.app/Contents/MacOS/fuide-activity-monitor" --mcp
 # 開発中は cargo のバイナリでも同じ
 claude mcp add fuide-brew -- target/debug/fuide-brew --mcp
 ```
@@ -191,7 +227,7 @@ UPDATE_SNAPSHOTS=true cargo test -p fuide    # 見た目が意図的に変わっ
 | 単体 (アプリ) | `apps/*/src/*.rs` | `fs.rs` / `brew.rs` の純関数 |
 | 状態機械 (アプリ) | `apps/*/src/app/tests.rs` | `Explorer::with_context(ctx, dir, settings)` / `BrewApp::with_context(ctx, settings)` で `CreationContext` 無しにアプリを作り、`Action` を適用して状態・ログ・ダイアログを検証。ファイルマネージャーは一時ディレクトリで実ファイル操作 (一覧・ソート・フィルター・履歴・リネーム・完全削除・読取拒否) まで通す。ローダーやファイル操作のスレッドは `ui()` と同じく `poll_*` を回して待つ |
 | エージェント (fuide) | `crates/fuide/tests/agent.rs` | kittest 上で `Agent::submit` に `observe` / `click` / `type` / `key` / `screenshot` を流し、注入したクリックが kit の部品に届くこと、無効・人間留保・不明なラベルが拒否されること、PNG が返ることを検証 (ソケット無し) |
-| E2E (アプリ) | `apps/*/src/app/e2e.rs` | `egui_kittest` の `Harness::new_eframe` で本物の `Explorer` / `BrewApp` を起動し、アクセシビリティ木からラベルでクリック・キー入力・文字入力して状態を検証。brew はエージェント経由 (ビュー切替・行選択・Cmd+1・フィルター入力、確認ダイアログの人間留保と `agent_confirm` での確定) も通す。ファイルマネージャー: 行クリック → Enter で移動 / Backspace / Cmd+[ ] / 矢印、Cmd+F → 入力 → Esc、歯車 → パレット・角の変更が保存される。brew (偽 brew): ビュー切替 (タブ / Cmd+数字)、UPGRADE ALL → 確認 → 出力ストリーム → SUCCESS カード → ACKNOWLEDGE、検索ビューで Cmd+F → 入力 → Enter、Cmd+, → パレット保存。設定ウィンドウは kittest では埋め込み `egui::Window` になる。プレイヤー (偽バックエンド): Cmd+L → URL 入力 → Enter で再生開始、Space / PLAY / 矢印 / M / S / STOP、行クリック → Enter、PREVIOUS / NEXT、Backspace で外す、CLEAR |
+| E2E (アプリ) | `apps/*/src/app/e2e.rs` | `egui_kittest` の `Harness::new_eframe` で本物の `Explorer` / `BrewApp` を起動し、アクセシビリティ木からラベルでクリック・キー入力・文字入力して状態を検証。brew はエージェント経由 (ビュー切替・行選択・Cmd+1・フィルター入力、確認ダイアログの人間留保と `agent_confirm` での確定) も通す。ファイルマネージャー: 行クリック → Enter で移動 / Backspace / Cmd+[ ] / 矢印、Cmd+F → 入力 → Esc、歯車 → パレット・角の変更が保存される。brew (偽 brew): ビュー切替 (タブ / Cmd+数字)、UPGRADE ALL → 確認 → 出力ストリーム → SUCCESS カード → ACKNOWLEDGE、検索ビューで Cmd+F → 入力 → Enter、Cmd+, → パレット保存。設定ウィンドウは kittest では埋め込み `egui::Window` になる。プレイヤー (偽バックエンド): Cmd+L → URL 入力 → Enter で再生開始、Space / PLAY / 矢印 / M / S / STOP、行クリック → Enter、PREVIOUS / NEXT、Backspace で外す、CLEAR。アクティビティモニター (偽ソース): タブ (クリック / Cmd+5) で列が変わる、行を名前でクリック → QUIT が有効に、↑ ↓ / Esc、Cmd+F → 入力 → Esc、QUIT → CANCEL / FORCE QUIT → Enter でプロセスが一覧から消える、root のプロセスは ERROR カード、5 タブ + ダイアログのスナップショット |
 | 統合 (実エンジン) | `apps/player/tests/engine.rs` | `harness = false` でメインスレッドを確保し、実 AVFoundation で WAV (PCM、再生完了・再開) と MP4 (H.264 / AAC、メタデータ、フレームのテクスチャ化、速度・音量) と存在しないファイルの失敗を確認。`CFRunLoopRunInMode` でメインの run loop を回しながらポーリングする |
 | 結合 (brew) | 同上 + `apps/brew/fixtures/` | `FUIDE_BREW_BIN` を `fixtures/fake-brew.sh` に向け、本物の worker スレッドとストリーミング実行 (`==>` 行のログ流入、成功/失敗カード、完了後の在庫再取得、検索結果への導入状態の反映) を Homebrew 無しで検証。`info-installed.json` が在庫のフィクスチャ |
 
@@ -213,7 +249,7 @@ UPDATE_SNAPSHOTS=true cargo test -p fuide    # 見た目が意図的に変わっ
 
 ```sh
 cargo install cargo-bundle          # 初回のみ
-./scripts/release.sh                # dist/FUIDE File Manager.{app,dmg}, dist/FUIDE Brew.{app,dmg}
+./scripts/release.sh                # dist/FUIDE File Manager.{app,dmg}, dist/FUIDE Brew.{app,dmg}, Player, Activity Monitor
 ./scripts/release.sh fuide-brew       # 1 本だけ
 ```
 
@@ -226,7 +262,7 @@ cargo install cargo-bundle          # 初回のみ
 ## ターミナルから開く (`open` 風)
 
 ```sh
-./scripts/install-cli.sh            # /opt/homebrew/bin (書込可なら) or ~/.local/bin に ffm / fuide-brew を置く
+./scripts/install-cli.sh            # /opt/homebrew/bin (書込可なら) or ~/.local/bin に ffm / fuide-brew / fuide-player / fuide-activity-monitor を置く
 ffm                                 # カレントディレクトリを開く
 ffm ~/Downloads                     # 指定ディレクトリを開く (相対パス可)
 fuide-brew

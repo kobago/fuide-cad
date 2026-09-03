@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install terminal launchers `ffm [DIR]` (FUIDE File Manager), `fuide-brew` and
-# `fuide-player [FILE|URL]...`, like `open`.
+# Install terminal launchers `ffm [DIR]` (FUIDE File Manager), `fuide-brew`,
+# `fuide-player [FILE|URL]...` and `fuide-activity-monitor`, like `open`.
 #   ./scripts/install-cli.sh            # into /opt/homebrew/bin if writable, else ~/.local/bin
 #   ./scripts/install-cli.sh ~/bin      # explicit directory
 # The launchers use `open -na`, so the app starts detached via LaunchServices (Dock icon,
@@ -73,8 +73,23 @@ done
 eval exec open -na \"\$app\" --args $args
 SH
 
-chmod +x "$dest/ffm" "$dest/fuide-brew" "$dest/fuide-player"
-echo "installed: $dest/ffm  $dest/fuide-brew  $dest/fuide-player"
+cat > "$dest/fuide-activity-monitor" <<'SH'
+#!/bin/sh
+# fuide-activity-monitor       — open FUIDE Activity Monitor
+# fuide-activity-monitor --mcp — stdio MCP bridge to the running app
+app="FUIDE Activity Monitor"
+if [ "${1:-}" = "--mcp" ]; then
+  for d in /Applications "$HOME/Applications"; do
+    bin="$d/$app.app/Contents/MacOS/fuide-activity-monitor"
+    [ -x "$bin" ] && exec "$bin" --mcp
+  done
+  echo "fuide-activity-monitor: $app.app not found in /Applications or ~/Applications" >&2; exit 1
+fi
+exec open -a "$app"
+SH
+
+chmod +x "$dest/ffm" "$dest/fuide-brew" "$dest/fuide-player" "$dest/fuide-activity-monitor"
+echo "installed: $dest/ffm  $dest/fuide-brew  $dest/fuide-player  $dest/fuide-activity-monitor"
 case ":$PATH:" in
   *":$dest:"*) ;;
   *) echo "note: $dest is not on PATH — add to ~/.zshrc:  export PATH=\"$dest:\$PATH\"" ;;

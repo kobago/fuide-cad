@@ -1,0 +1,4 @@
+# egui_kittest snapshot settings (see crates/fuide/tests/ui.rs)
+output_path = "tests/snapshots"
+threshold = 0.6
+max_failed_pixels = 0

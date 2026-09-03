@@ -1,0 +1,17 @@
+[package]
+name = "fuide-3d"
+description = "3D viewport for FUIDE apps: orbit camera, hologram mesh + glowing line rendering on wgpu, egui widget"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+egui = { workspace = true }
+egui-wgpu = "0.36.1"
+wgpu = { version = "30", default-features = false, features = ["metal", "wgsl"] }
+bytemuck = { version = "1", features = ["derive"] }
+fuide = { workspace = true }
+
+[dev-dependencies]
+eframe = { workspace = true }
+egui_kittest = { version = "0.36.1", features = ["eframe", "wgpu", "snapshot"] }

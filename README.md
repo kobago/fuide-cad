@@ -17,7 +17,7 @@ apps/brew/           FUIDE Brew — Homebrew の GUI (brew info --json / search 
 apps/player/         FUIDE Player — オーディオ / 動画プレイヤー (AVFoundation、ファイルと http(s) URL)
 apps/activity-monitor/  FUIDE Activity Monitor — CPU / メモリ / エネルギー / ディスク / ネットワークのプロセス監視 (libproc / Mach / IOKit)
 apps/cad/            FUIDE CAD — パラメトリック 3D CAD (Manifold のメッシュカーネル + truck、フィーチャー列 + 式、ねじ山、STL / JSON、MCP の CAD 専用ツール)
-apps/git/            FUIDE Git — Git クライアント (読み書きとも `git` CLI、hunk 単位のステージ、fetch / push のストリーミング出力)
+apps/git/            FUIDE Git — Git クライアント (読み書きとも `git` CLI、hunk 単位のステージ、コミットグラフ、fetch / push のストリーミング出力)
 assets/fonts/        Orbitron (見出し) / Share Tech Mono (データ) — いずれも OFL
 ```
 
@@ -225,7 +225,7 @@ Git クライアント ([#4](https://github.com/kobago/fuide/issues/4))。**libg
 - **左上: REPOSITORY** — 名前、パス、ブランチ、upstream、ahead / behind、OPEN (パス入力ダイアログ、Tab 補完) / FETCH、最近開いたリポジトリ (`~/Library/Application Support/FUIDE/git-recent.conf`)。Finder や ffm からディレクトリをドロップしても開く
 - **左下: BRANCHES** — NEW BRANCH (`switch -c`)、LOCAL / REMOTES / TAGS の一覧 (現在のブランチが点灯、右に upstream)。**ダブルクリックで切替** (`switch`。リモートは同名のローカルを作って追跡、タグは detach)
 - **中央: CHANGES ビュー** (Cmd+1) — UNSTAGED / STAGED の 2 表 (ST / PATH)。行クリックで下に diff、**ダブルクリックか Space でステージ / アンステージ**、STAGE ALL (`add -A`、Cmd+A) / UNSTAGE ALL (`reset`) / DISCARD (`restore` または untracked は `clean -f`、危険色の確認ダイアログでエージェントは人間留保)。下の DIFF は行番号 (旧 / 新)、追加 = 緑、削除 = 危険色、hunk 行に **STAGE HUNK / UNSTAGE HUNK** (`git apply --cached [-R]` にその hunk だけの patch を流す)
-- **中央: HISTORY ビュー** (Cmd+2) — `log --all` の直近 500 件 (HASH / SUBJECT / AUTHOR / WHEN、装飾付きは accent)。行を選ぶと右にコミット詳細、その変更ファイルをクリックすると下に diff (`show <hash> -- path`)
+- **中央: HISTORY ビュー** (Cmd+2) — `log --all --topo-order` の直近 500 件 (グラフ / HASH / SUBJECT / AUTHOR / WHEN、装飾付きは accent)。先頭列が**コミットグラフ**: `git::graph` が親リストからレーンを割り当て (第 1 親は同じレーンを引き継ぎ、第 2 親以降は待っているレーンか空きレーン、分岐線は分岐点の行まで伸びる gitk 流)、表の行ごとに線 (グロー付き) とノード (輪、HEAD は塗り + 脈動) を描く (`table::table_decorated` の行フック)。レーン色は accent / ok / warn / accent_dim の循環、8 レーンまで表示。行を選ぶと右にコミット詳細、その変更ファイルをクリックすると下に diff (`show <hash> -- path`)
 - **右: COMMIT** (CHANGES ビュー) — メッセージ欄と COMMIT (staged があり、メッセージが空でないとき。`commit -F -` で stdin から渡す。Cmd+Enter は欄にフォーカスがあっても効く)。HISTORY ビューでは選択コミットの件名 / 本文 / hash / author / date / parents / refs、COPY HASH、ファイル一覧
 - **ツールバー**: 再読込 (Cmd+R)、ビュー切替、PULL (`--ff-only`、behind 数付き) / PUSH (ahead 数付き。upstream が無ければ `-u origin <branch>`)
 - **下: GIT OUTPUT** — コマンドの標準出力 / 標準エラー (`error` / `fatal` = 危険色、`warning` / `hint` = 注意色)。帯のドラッグで高さ変更、チップのクリックで開閉
@@ -240,7 +240,7 @@ Git クライアント ([#4](https://github.com/kobago/fuide/issues/4))。**libg
 | ビュー | Cmd+1 (CHANGES) / Cmd+2 (HISTORY) |
 | 設定 / 終了 | Cmd+, / Cmd+W |
 
-まだ無いもの: コミットグラフの線、reset / force push / branch -D、マージ競合の解決、500 件より古いログの段階読み込み、MCP の Git 専用ツール。
+まだ無いもの ([#7](https://github.com/kobago/fuide/issues/7)): reset / force push / branch -D、マージ競合の解決、500 件より古いログの段階読み込み、MCP の Git 専用ツール。
 
 撮影フック: `FUIDE_DEV_DIALOG=diff|history|discard|open|branch|error|success`。テスト (`cargo test -p fuide-git`) は一時ディレクトリに `git init` した実リポジトリで回る (ネット不要。`GIT_CONFIG_GLOBAL=/dev/null` で署名などの個人設定を外す)。
 

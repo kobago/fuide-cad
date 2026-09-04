@@ -1531,6 +1531,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuide-git"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "fuide",
+]
+
+[[package]]
 name = "fuide-player"
 version = "0.1.0"
 dependencies = [

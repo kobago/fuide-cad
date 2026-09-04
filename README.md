@@ -17,6 +17,7 @@ apps/brew/           FUIDE Brew — Homebrew の GUI (brew info --json / search 
 apps/player/         FUIDE Player — オーディオ / 動画プレイヤー (AVFoundation、ファイルと http(s) URL)
 apps/activity-monitor/  FUIDE Activity Monitor — CPU / メモリ / エネルギー / ディスク / ネットワークのプロセス監視 (libproc / Mach / IOKit)
 apps/cad/            FUIDE CAD — パラメトリック 3D CAD (Manifold のメッシュカーネル + truck、フィーチャー列 + 式、ねじ山、STL / JSON、MCP の CAD 専用ツール)
+apps/git/            FUIDE Git — Git クライアント (読み書きとも `git` CLI、hunk 単位のステージ、fetch / push のストリーミング出力)
 assets/fonts/        Orbitron (見出し) / Share Tech Mono (データ) — いずれも OFL
 ```
 
@@ -211,6 +212,37 @@ truck を B-rep モデリングに使っていたときに分かった癖と対�
 MCP: 汎用の `observe` / `click` / `type` に加えて **CAD 専用ツール** がある (下の「AI エージェントから操作する」)。`document` (JSON 全体)、`add_feature` (JSON のフィーチャーをそのまま渡す。`thread` も可、`union` / `cut` / `intersect` は `boolean` の略記)、`set_field` (`size.z` / `axis` / `name` / `suppressed`)、`remove_feature`、`set_param` / `remove_param`、`select`、`measure` (体積・寸法・重心・エラー)、`view` (視点 / モード / フィット)、`export` (STL / JSON。既存ファイルへの上書きは人間留保)、`open` (`new: true` で新規)。各ツールは通常の操作と同じ経路 (ログ、取り消し) を通り、結果の文の後に観測が付く。
 
 撮影フック: `FUIDE_DEV_SAMPLE=1`、`FUIDE_DEV_DIALOG=open|save|overwrite|error`。
+
+## FUIDE Git
+
+```sh
+cargo run -p fuide-git                 # 最近開いたリポジトリ (無ければカレントディレクトリ)
+cargo run -p fuide-git -- ~/src/repo   # リポジトリを指定して開く
+```
+
+Git クライアント ([#4](https://github.com/kobago/fuide/issues/4))。**libgit2 / gitoxide は使わず、読み書きともに `git` CLI だけ**を呼ぶ (`apps/git/src/git.rs`)。読み取りは `status --porcelain=v2 -z` / `log` / `for-each-ref` / `diff` / `show` を別スレッドで実行して 1 メッセージで返す。変更系 (`add` / `restore` / `commit` / `switch` / `fetch` / `pull` / `push` / `apply`) はすべて brew と同じストリーミング runner を通り、出力が 1 行ずつログに流れ、完了後にリポジトリを読み直す。同時実行は 1 つ。fetch / push は git 自身の credential helper に任せる (`GIT_TERMINAL_PROMPT=0` なので対話は起きず、失敗は ERROR カード)。
+
+- **左上: REPOSITORY** — 名前、パス、ブランチ、upstream、ahead / behind、OPEN (パス入力ダイアログ、Tab 補完) / FETCH、最近開いたリポジトリ (`~/Library/Application Support/FUIDE/git-recent.conf`)。Finder や ffm からディレクトリをドロップしても開く
+- **左下: BRANCHES** — NEW BRANCH (`switch -c`)、LOCAL / REMOTES / TAGS の一覧 (現在のブランチが点灯、右に upstream)。**ダブルクリックで切替** (`switch`。リモートは同名のローカルを作って追跡、タグは detach)
+- **中央: CHANGES ビュー** (Cmd+1) — UNSTAGED / STAGED の 2 表 (ST / PATH)。行クリックで下に diff、**ダブルクリックか Space でステージ / アンステージ**、STAGE ALL (`add -A`、Cmd+A) / UNSTAGE ALL (`reset`) / DISCARD (`restore` または untracked は `clean -f`、危険色の確認ダイアログでエージェントは人間留保)。下の DIFF は行番号 (旧 / 新)、追加 = 緑、削除 = 危険色、hunk 行に **STAGE HUNK / UNSTAGE HUNK** (`git apply --cached [-R]` にその hunk だけの patch を流す)
+- **中央: HISTORY ビュー** (Cmd+2) — `log --all` の直近 500 件 (HASH / SUBJECT / AUTHOR / WHEN、装飾付きは accent)。行を選ぶと右にコミット詳細、その変更ファイルをクリックすると下に diff (`show <hash> -- path`)
+- **右: COMMIT** (CHANGES ビュー) — メッセージ欄と COMMIT (staged があり、メッセージが空でないとき。`commit -F -` で stdin から渡す。Cmd+Enter は欄にフォーカスがあっても効く)。HISTORY ビューでは選択コミットの件名 / 本文 / hash / author / date / parents / refs、COPY HASH、ファイル一覧
+- **ツールバー**: 再読込 (Cmd+R)、ビュー切替、PULL (`--ff-only`、behind 数付き) / PUSH (ahead 数付き。upstream が無ければ `-u origin <branch>`)
+- **下: GIT OUTPUT** — コマンドの標準出力 / 標準エラー (`error` / `fatal` = 危険色、`warning` / `hint` = 注意色)。帯のドラッグで高さ変更、チップのクリックで開閉
+
+| 操作 | キー |
+|---|---|
+| 選択移動 | ↑↓ (フォーカス中の表: UNSTAGED / STAGED / HISTORY) |
+| ステージ / アンステージ | Space または Enter (選択行)、ダブルクリック |
+| 全部ステージ | Cmd+A |
+| コミット | Cmd+Enter |
+| リポジトリを開く / 再読込 | Cmd+O / Cmd+R |
+| ビュー | Cmd+1 (CHANGES) / Cmd+2 (HISTORY) |
+| 設定 / 終了 | Cmd+, / Cmd+W |
+
+まだ無いもの: コミットグラフの線、reset / force push / branch -D、マージ競合の解決、500 件より古いログの段階読み込み、MCP の Git 専用ツール。
+
+撮影フック: `FUIDE_DEV_DIALOG=diff|history|discard|open|branch|error|success`。テスト (`cargo test -p fuide-git`) は一時ディレクトリに `git init` した実リポジトリで回る (ネット不要。`GIT_CONFIG_GLOBAL=/dev/null` で署名などの個人設定を外す)。
 
 ## 設定ウィンドウ (テーマ)
 

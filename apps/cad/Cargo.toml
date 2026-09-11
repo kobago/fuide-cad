@@ -17,7 +17,7 @@ path = "src/main.rs"
 egui = { workspace = true }
 eframe = { workspace = true }
 fuide = { workspace = true }
-fuide-3d = { path = "../../crates/fuide-3d" }
+fuide-3d = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # macOS open panel (Cmd+O); the in-app path dialog (Cmd+L) is what the agent uses

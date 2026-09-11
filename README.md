@@ -4,12 +4,11 @@
 
 ```
 apps/cad/            FUIDE CAD — Manifold のメッシュカーネル + truck、フィーチャー列 + 式、ねじ山、STL / JSON、MCP の CAD 専用ツール
-crates/fuide-3d/     3D ビューポート `fuide-3d` (wgpu): Z-up オービットカメラ、ホログラム塗り + グローする線、egui ウィジェット
 assets/icons/        .app のアイコン (SVG)
 scripts/             release.sh (.app / DMG)、install-cli.sh (ターミナル用ランチャー)
 ```
 
-`fuide` は git 依存 (`Cargo.toml` の `[workspace.dependencies]`)。`fuide` クレート自体を隣の `../fuide` で直しながら動かすときは `Cargo.toml` 末尾のコメントの `[patch]` を外す。
+`fuide` と 3D ビューポート [`fuide-3d`](https://github.com/kobago/fuide-3d) (wgpu: Z-up オービットカメラ、ホログラム塗り + グローする線、egui ウィジェット) は git 依存 (`Cargo.toml` の `[workspace.dependencies]`)。クレート自体を隣の `../fuide` / `../fuide-3d` で直しながら動かすときは `Cargo.toml` 末尾のコメントの `[patch]` を外す。
 
 共通の仕組み (設定ウィンドウ、MCP エージェント、テストの決めごと、再描画レート) は [kobago/fuide](https://github.com/kobago/fuide) の README を参照。
 

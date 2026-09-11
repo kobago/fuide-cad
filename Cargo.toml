@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/fuide-3d", "apps/cad"]
+members = ["apps/cad"]
 
 [workspace.package]
 edition = "2021"
@@ -10,13 +10,17 @@ license = "MIT"
 [workspace.dependencies]
 egui = "0.36.1"
 eframe = { version = "0.36.1", default-features = false, features = ["default_fonts", "wgpu"] }
-# The FUI kit lives in its own repo (private for now, so SSH). Pin with `rev` / `tag` for releases.
+# The FUI kit and the 3D viewport live in their own repos (private for now, so SSH).
+# Pin with `rev` / `tag` for releases.
 fuide = { git = "ssh://git@github.com/kobago/fuide" }
+fuide-3d = { git = "ssh://git@github.com/kobago/fuide-3d" }
 
-# Developing the `fuide` crate alongside this app? Point Cargo at the sibling checkout
+# Developing `fuide` / `fuide-3d` alongside this app? Point Cargo at the sibling checkouts
 # (uncomment; do not commit):
 # [patch."ssh://git@github.com/kobago/fuide"]
 # fuide = { path = "../fuide/crates/fuide" }
+# [patch."ssh://git@github.com/kobago/fuide-3d"]
+# fuide-3d = { path = "../fuide-3d" }
 
 [profile.dev]
 opt-level = 1

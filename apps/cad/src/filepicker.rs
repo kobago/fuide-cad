@@ -6,12 +6,17 @@
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
+#[cfg(target_os = "macos")]
 use objc2::MainThreadMarker;
+#[cfg(target_os = "macos")]
 use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
+#[cfg(target_os = "macos")]
 use objc2_foundation::{ns_string, NSArray, NSString, NSURL};
+#[cfg(target_os = "macos")]
 use objc2_uniform_type_identifiers::UTType;
 
 pub struct FilePicker {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     tx: Sender<Option<PathBuf>>,
     rx: Receiver<Option<PathBuf>>,
     open: bool,
@@ -31,6 +36,15 @@ impl Default for FilePicker {
 impl FilePicker {
     /// Show the panel (one `.json` document). Only one panel at a time; off the main thread
     /// nothing happens and `false` is returned (the caller falls back to the in-app dialog).
+    /// Off macOS there is no native panel: always `false`, same fallback.
+    #[cfg(not(target_os = "macos"))]
+    pub fn show(&mut self, _start_dir: Option<&std::path::Path>) -> bool {
+        self.open
+    }
+
+    /// Show the panel (one `.json` document). Only one panel at a time; off the main thread
+    /// nothing happens and `false` is returned (the caller falls back to the in-app dialog).
+    #[cfg(target_os = "macos")]
     pub fn show(&mut self, start_dir: Option<&std::path::Path>) -> bool {
         if self.open {
             return true;
